@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>欢乐牌桌 · 玩家 {{ current_player }}</title>
+    <style>
+        :root {
+            --felt: #0d5a32;
+            --felt2: #0a3d22;
+            --felt-highlight: rgba(255, 255, 255, 0.06);
+            --gold: #f7e7a8;
+            --gold-deep: #c9a227;
+            --gold-shadow: rgba(0, 0, 0, 0.35);
+            --ink: #1a1a1a;
+            --card-w: 52px;
+            --card-h: 76px;
+            --radius-card: 8px;
+            --seat-name: rgba(255, 255, 255, 0.92);
+            --muted: rgba(255, 255, 255, 0.65);
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+            background: #06140c;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* 绿绒桌 + 椭圆高光（类似斗地主牌桌） */
+        .table {
+            position: relative;
+            min-height: 100dvh;
+            height: 100dvh;
+            width: 100%;
+            background:
+                radial-gradient(ellipse 85% 55% at 50% 42%, rgba(255, 255, 255, 0.07), transparent 55%),
+                radial-gradient(ellipse 120% 90% at 50% 50%, var(--felt), var(--felt2));
+            box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.35);
+        }
+
+        .table::after {
+            content: "";
+            position: absolute;
+            inset: 8%;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            pointer-events: none;
+        }
+
+        .room-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: calc(10px + env(safe-area-inset-top)) 14px 8px;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent);
+        }
+
+        .room-title {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .room-title strong {
+            font-size: 16px;
+            letter-spacing: 0.5px;
+            text-shadow: 0 1px 2px var(--gold-shadow);
+        }
+
+        .chip {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(247, 231, 168, 0.35);
+            color: var(--gold);
+        }
+
+        .chip--dim { color: var(--muted); border-color: rgba(255, 255, 255, 0.15); }
+
+        /* 四家手牌张数 + 牌墙（随每次请求刷新，aria-live 便于读屏） */
+        .count-board {
+            position: absolute;
+            top: calc(48px + env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 19;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            max-width: min(96vw, 560px);
+            padding: 0 10px;
+        }
+
+        .count-pill {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.42);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.88);
+        }
+
+        .count-pill.is-turn {
+            border-color: rgba(247, 231, 168, 0.65);
+            box-shadow: 0 0 0 2px rgba(247, 231, 168, 0.2);
+        }
+
+        .count-pill.is-human .count-p-label { color: var(--gold); }
+
+        .count-p-num {
+            font-weight: 800;
+            font-size: 15px;
+            font-variant-numeric: tabular-nums;
+            color: #fff;
+        }
+
+        .count-p-sub { font-size: 10px; color: var(--muted); }
+
+        .count-pill--wall {
+            border-color: rgba(34, 197, 94, 0.35);
+        }
+
+        /* 对手位 */
+        .seat {
+            position: absolute;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            text-align: center;
+        }
+
+        .seat--left {
+            left: max(8px, env(safe-area-inset-left));
+            top: 42%;
+            transform: translateY(-50%);
+        }
+
+        .seat--right {
+            right: max(8px, env(safe-area-inset-right));
+            top: 42%;
+            transform: translateY(-50%);
+        }
+
+        .seat--top {
+            left: 50%;
+            top: calc(56px + env(safe-area-inset-top));
+            transform: translateX(-50%);
+        }
+
+        .avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #3a7d52, #1e4d2f);
+            border: 2px solid rgba(247, 231, 168, 0.55);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+            display: grid;
+            place-items: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--gold);
+        }
+
+        .seat-name {
+            font-size: 12px;
+            color: var(--seat-name);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+        }
+
+        .seat-count {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .back-stack {
+            position: relative;
+            width: 38px;
+            height: 48px;
+        }
+
+        .back-stack .bk {
+            position: absolute;
+            left: 0;
+            width: 34px;
+            height: 46px;
+            border-radius: 6px;
+            background: linear-gradient(180deg, #1e3d5c, #0f2740);
+            border: 1px solid rgba(247, 231, 168, 0.35);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+        }
+
+        .back-stack .bk:nth-child(1) { top: 0; transform: rotate(-6deg); }
+        .back-stack .bk:nth-child(2) { top: 3px; left: 2px; transform: rotate(0deg); }
+        .back-stack .bk:nth-child(3) { top: 6px; left: 4px; transform: rotate(6deg); }
+
+        /* 中央出牌区 */
+        .arena {
+            position: absolute;
+            left: 50%;
+            top: 44%;
+            transform: translate(-50%, -50%);
+            width: min(92vw, 520px);
+            z-index: 5;
+        }
+
+        .melds-ribbon {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            margin-bottom: 12px;
+            min-height: 28px;
+        }
+
+        .meld-pill {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.88);
+        }
+
+        .meld-pill b { color: var(--gold); font-weight: 600; }
+
+        .river {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            align-items: center;
+            padding: 14px 12px;
+            min-height: 96px;
+            border-radius: 16px;
+            background: rgba(0, 0, 0, 0.22);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .river-empty {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .river-card {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-width: 44px;
+            height: 62px;
+            padding: 4px 6px;
+            border-radius: 8px;
+            background: linear-gradient(180deg, #fff, #f0f0f0);
+            color: #111;
+            font-size: 11px;
+            font-weight: 700;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .river-card small {
+            display: block;
+            margin-top: 2px;
+            font-size: 9px;
+            font-weight: 600;
+            color: #666;
+        }
+
+        .draw-pop {
+            margin-top: 14px;
+            text-align: center;
+        }
+
+        .draw-pop .big {
+            display: inline-block;
+            padding: 12px 22px;
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(247, 231, 168, 0.95), rgba(201, 162, 39, 0.95));
+            color: #3a2500;
+            font-size: 18px;
+            font-weight: 800;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+        }
+
+        /* 底部手牌扇形 + 操作栏 */
+        .dock {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 30;
+            padding: 10px 10px calc(12px + env(safe-area-inset-bottom));
+            background: linear-gradient(0deg, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0.2) 70%, transparent 100%);
+        }
+
+        .hand-wrap {
+            display: flex;
+            justify-content: center;
+            padding: 0 6px 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+        }
+
+        .hand-fan {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 0;
+            padding: 0 8px;
+            min-height: calc(var(--card-h) + 18px);
+        }
+
+        .playing-card {
+            position: relative;
+            flex: 0 0 auto;
+            width: var(--card-w);
+            height: var(--card-h);
+            margin-left: -18px;
+            border-radius: var(--radius-card);
+            background: linear-gradient(180deg, #ffffff 0%, #f3f3f3 55%, #e8e8e8 100%);
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.12s ease, box-shadow 0.12s ease, margin 0.12s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 4px;
+            color: #111;
+        }
+
+        .hand-fan .playing-card:first-child { margin-left: 0; }
+
+        .playing-card:hover {
+            transform: translateY(-10px) scale(1.03);
+            z-index: 2;
+            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
+        }
+
+        .playing-card.is-selected {
+            transform: translateY(-16px) scale(1.06);
+            z-index: 3;
+            outline: 3px solid rgba(247, 231, 168, 0.95);
+            outline-offset: 1px;
+        }
+
+        .playing-card .pc-main {
+            font-size: 15px;
+            font-weight: 800;
+            line-height: 1.1;
+            text-align: center;
+        }
+
+        .playing-card .pc-sub {
+            margin-top: 2px;
+            font-size: 10px;
+            font-weight: 700;
+            opacity: 0.75;
+        }
+
+        .playing-card.is-red .pc-main,
+        .playing-card.is-red .pc-sub { color: #b42318; }
+
+        .playing-card.is-black .pc-main,
+        .playing-card.is-black .pc-sub { color: #111; }
+
+        .playing-card.is-gold .pc-main,
+        .playing-card.is-gold .pc-sub { color: #7a5200; }
+
+        .btn-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding-top: 4px;
+        }
+
+        .btn-bar form {
+            display: inline-flex;
+        }
+
+        .btn-gold {
+            appearance: none;
+            border: none;
+            min-width: 108px;
+            padding: 12px 18px;
+            border-radius: 999px;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #4a3200;
+            background: linear-gradient(180deg, #fff7c2 0%, #f0d66a 45%, #d4a82a 100%);
+            box-shadow:
+                0 6px 0 #8a6a1a,
+                0 10px 22px rgba(0, 0, 0, 0.35);
+            cursor: pointer;
+            transition: transform 0.06s ease, filter 0.12s ease;
+        }
+
+        .btn-gold:active { transform: translateY(3px); box-shadow: 0 3px 0 #8a6a1a, 0 6px 14px rgba(0, 0, 0, 0.3); }
+
+        .btn-gold:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+            filter: grayscale(0.3);
+        }
+
+        .btn-outline {
+            min-width: 88px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--gold);
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(247, 231, 168, 0.45);
+            cursor: pointer;
+        }
+
+        .btn-outline:active { transform: translateY(1px); }
+
+        .dock-more {
+            max-width: min(92vw, 520px);
+            margin: 10px auto 0;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .dock-more summary {
+            cursor: pointer;
+            padding: 10px 12px;
+            list-style: none;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .dock-more summary::-webkit-details-marker { display: none; }
+
+        .dock-more[open] summary { border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+
+        .dock-fields {
+            padding: 10px 12px 12px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+        }
+
+        .field label { font-size: 12px; color: var(--muted); }
+
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(10, 30, 20, 0.75);
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .hint-tiny {
+            font-size: 11px;
+            color: var(--muted);
+            line-height: 1.45;
+            margin: 0;
+        }
+
+        @media (max-width: 380px) {
+            :root { --card-w: 46px; --card-h: 70px; }
+            .playing-card { margin-left: -16px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="table">
+    <header class="room-bar">
+        <div class="room-title">
+            <strong>欢乐牌桌</strong>
+            <span class="chip">本家 · P{{ human_player_index + 1 }}（行牌位 P{{ clock_player_index + 1 }}）</span>
+        </div>
+        <span class="chip chip--dim">
+            {% if claim_waiting_human %}等你胡 / 吃 / 碰 / 过{% elif claim_state %}碰牌询问中{% elif needs_wall_draw %}待摸牌{% else %}可出牌 / 操作{% endif %}
+            {% if is_dealer_opening %} · 庄家首出{% endif %}
+        </span>
+    </header>
+
+    <div class="count-board" id="handCountBoard" aria-live="polite" aria-atomic="true">
+        {% for i in range(num_players) %}
+        <span class="count-pill {% if i == current_player_index %}is-turn{% endif %} {% if i == human_player_index %}is-human{% endif %}">
+            <span class="count-p-label">P{{ i + 1 }}{% if i == human_player_index %}你{% else %}机{% endif %}</span>
+            <span class="count-p-num">{{ seat_counts[i] }}</span>
+            <span class="count-p-sub">张 · 磕{{ seat_meld_counts[i] }}</span>
+        </span>
+        {% endfor %}
+        <span class="count-pill count-pill--wall">
+            <span class="count-p-label">牌墙</span>
+            <span class="count-p-num">{{ draw_pile_count }}</span>
+        </span>
+        <span class="count-pill count-pill--wall" style="border-color:rgba(247,231,168,.35);">
+            <span class="count-p-label">你得分</span>
+            <span class="count-p-num">{{ player_scores[human_player_index] }}</span>
+        </span>
+    </div>
+
+    <!-- 左、上、右 三向座位（相对本家） -->
+    <aside class="seat seat--left">
+        <div class="avatar">{{ seat_left + 1 }}</div>
+        <div class="seat-name">上家</div>
+        <div class="back-stack" aria-hidden="true"><span class="bk"></span><span class="bk"></span><span class="bk"></span></div>
+        <div class="seat-count">{{ seat_counts[seat_left] }} 张 · 磕{{ seat_meld_counts[seat_left] }}</div>
+    </aside>
+
+    <aside class="seat seat--top">
+        <div class="avatar">{{ seat_top + 1 }}</div>
+        <div class="seat-name">对家</div>
+        <div class="back-stack" aria-hidden="true"><span class="bk"></span><span class="bk"></span><span class="bk"></span></div>
+        <div class="seat-count">{{ seat_counts[seat_top] }} 张 · 磕{{ seat_meld_counts[seat_top] }}</div>
+    </aside>
+
+    <aside class="seat seat--right">
+        <div class="avatar">{{ seat_right + 1 }}</div>
+        <div class="seat-name">下家</div>
+        <div class="back-stack" aria-hidden="true"><span class="bk"></span><span class="bk"></span><span class="bk"></span></div>
+        <div class="seat-count">{{ seat_counts[seat_right] }} 张 · 磕{{ seat_meld_counts[seat_right] }}</div>
+    </aside>
+
+    <main class="arena">
+        <div class="melds-ribbon" aria-label="本家明牌">
+            {% if melds %}
+                {% for meld in melds %}
+                    {% if meld|length == 3 and meld[2] == "long" %}
+                        <span class="meld-pill">拢 <b>{{ meld[0] }}</b>×4 <small style="opacity:.7">+70</small></span>
+                    {% elif meld|length == 4 and meld[3] == "chi" %}
+                        <span class="meld-pill">吃 <b>{{ meld[0] }}</b> <b>{{ meld[1] }}</b> <b>{{ meld[2] }}</b> <small style="opacity:.7">+0</small></span>
+                    {% elif meld|length == 3 and meld[2] == "pong" %}
+                        <span class="meld-pill">碰 <b>{{ meld[0] }}</b>×3 <small style="opacity:.7">+10</small></span>
+                    {% elif meld[1] %}
+                        <span class="meld-pill">磕 <b>{{ meld[0] }}</b>×2+<b>{{ meld[1] }}</b> <small style="opacity:.7">+20</small></span>
+                    {% else %}
+                        <span class="meld-pill">磕 <b>{{ meld[0] }}</b>×3 <small style="opacity:.7">+20</small></span>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <span class="meld-pill" style="opacity:.55">暂无明牌</span>
+            {% endif %}
+        </div>
+
+        <div class="river" id="discardRiver">
+            {% if discarded %}
+                {% for player_idx, tile in discarded %}
+                    <span class="river-card">
+                        {{ tile }}
+                        <small>P{{ player_idx + 1 }}</small>
+                    </span>
+                {% endfor %}
+            {% else %}
+                <span class="river-empty">出牌会显示在中央河牌区</span>
+            {% endif %}
+        </div>
+
+        {% if claim_state %}
+        <div class="draw-pop">
+            <p class="hint-tiny" style="color:rgba(255,255,255,.92);margin:0 0 8px;font-size:14px;">
+                <b>P{{ claim_state.discarder + 1 }}</b> 打出 <b>{{ claim_state.tile }}</b>。
+                其余三家按 <b>下家→对家→上家</b> 依次决定荣胡、吃、碰或過；人机自动处理。
+                {% if claim_waiting_human %}
+                    <b>现轮到你</b>：胡 / 吃（仅当上家刚打出的这张）/ 碰 / 过由你自选；不成立会提示。
+                {% endif %}
+            </p>
+        </div>
+        {% elif needs_wall_draw %}
+        <div class="draw-pop">
+            <p class="hint-tiny" style="color:rgba(255,255,255,.85);margin:0 0 10px;">上家已出牌（或已过碰）。请先从牌墙摸一张，再出牌 / 磕 / 拢。</p>
+        </div>
+        {% elif last_wall_draw_tile %}
+        <div class="draw-pop">
+            <div class="big">本摸：{{ last_wall_draw_tile }}</div>
+        </div>
+        {% endif %}
+    </main>
+
+    {% if phase in ('turn', 'claim') %}
+    <footer class="dock">
+        <div class="hand-wrap">
+            <div class="hand-fan" id="handTiles">
+                {% for tile in hand %}
+                    <div class="playing-card" data-tile="{{ tile }}" role="button" tabindex="0">
+                        <span class="pc-main">{{ tile }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if claim_waiting_human %}
+        <div class="btn-bar">
+            <form method="post" id="rongHuForm">
+                <button type="submit" name="action" value="rong_hu" class="btn-gold">胡（荣）</button>
+            </form>
+            {% if claim_chi_eligible %}
+                {% for op in claim_chi_options %}
+                <form method="post" class="chi-opt-form">
+                    <input type="hidden" name="action" value="chi_claim" />
+                    <input type="hidden" name="chi_tile_a" value="{{ op.hand_pair[0] }}" />
+                    <input type="hidden" name="chi_tile_b" value="{{ op.hand_pair[1] }}" />
+                    <button type="submit" class="btn-gold">吃 {{ op.sequence[0] }}{{ op.sequence[1] }}{{ op.sequence[2] }}</button>
+                </form>
+                {% endfor %}
+                {% if not claim_chi_options %}
+                <form method="post" id="chiFreeForm" style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                    <input type="hidden" name="action" value="chi_claim" />
+                    <select name="chi_tile_a" class="btn-outline" style="padding:8px;border-radius:8px;">
+                        {% for t in chi_hand_choices %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                    </select>
+                    <select name="chi_tile_b" class="btn-outline" style="padding:8px;border-radius:8px;">
+                        {% for t in chi_hand_choices %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn-gold">吃</button>
+                </form>
+                {% endif %}
+            {% endif %}
+            <form method="post" id="pongClaimForm">
+                <button type="submit" name="action" value="pong_claim" class="btn-gold">碰（+10）</button>
+            </form>
+            <form method="post" id="pongPassForm">
+                <button type="submit" name="action" value="pong_pass" class="btn-outline">过</button>
+            </form>
+        </div>
+        <p class="hint-tiny" style="text-align:center;margin:8px 12px 0;">吃：仅<strong>上家</strong>这张可与手牌二张成顺（万/筒/条）；<strong>总督</strong>可顶替缺张。吃完由你出牌、不计分。碰须两张同名牌。</p>
+        {% elif needs_wall_draw %}
+        <div class="btn-bar">
+            <form method="post" id="drawWallForm">
+                <button type="submit" name="action" value="draw_wall" class="btn-gold">摸牌</button>
+            </form>
+        </div>
+        {% else %}
+        <div class="btn-bar">
+            <form method="post" id="discardForm">
+                <input type="hidden" name="tile" id="tileHidden" value="{{ hand[0] if hand else '' }}" />
+                <button type="submit" class="btn-gold" {% if not hand %}disabled{% endif %}>出牌</button>
+            </form>
+            <form method="post" id="huForm">
+                <button type="submit" name="action" value="hu" class="btn-outline">胡牌</button>
+            </form>
+            <form method="post" id="meldForm">
+                <input type="hidden" name="meld_tile" id="meldTileHidden" value="{{ hand[0] if hand else '' }}" />
+                <input type="hidden" name="substitute" id="substituteHidden" value="" />
+                <button type="submit" class="btn-outline" {% if not hand %}disabled{% endif %}>磕牌</button>
+            </form>
+            <form method="post" id="longForm">
+                <input type="hidden" name="action" value="long" />
+                <input type="hidden" name="long_tile" id="longTileHidden" value="{{ long_candidates[0] if long_candidates else '' }}" />
+                <button type="submit" class="btn-outline" {% if not long_candidates %}disabled{% endif %}>拢牌</button>
+            </form>
+        </div>
+
+        <details class="dock-more">
+            <summary>更多 · 精确选牌</summary>
+            <div class="dock-fields">
+                <div class="field">
+                    <label for="tileSelect">出牌（下拉与点选同步）</label>
+                    <select id="tileSelect">
+                        {% for tile in hand %}
+                            <option value="{{ tile }}">{{ tile }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="meldTileSelect">磕哪张</label>
+                    <select id="meldTileSelect">
+                        {% set unique_tiles = hand|unique %}
+                        {% for tile in unique_tiles %}
+                            <option value="{{ tile }}">{{ tile }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="substituteSelect">督牌（可选）</label>
+                    <select id="substituteSelect">
+                        <option value="">无</option>
+                        {% for d in player_du_pai %}
+                            <option value="{{ d }}">{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="longTileSelect">拢哪张</label>
+                    <select id="longTileSelect">
+                        {% if long_candidates %}
+                            {% for tile in long_candidates %}
+                                <option value="{{ tile }}">{{ tile }}</option>
+                            {% endfor %}
+                        {% else %}
+                            <option value="">暂无可拢</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <p class="hint-tiny">出牌后自己不摸牌，轮到下家须先摸牌。胡牌判定仍为占位。</p>
+            </div>
+        </details>
+        {% endif %}
+    </footer>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    const miscSet = new Set(["乌龟", "毛", "千万"]);
+
+    function parseTile(text) {
+        const t = (text || "").trim();
+        if (!t) return { main: "", sub: "", tone: "black" };
+        if (t.endsWith("万") || t.endsWith("筒") || t.endsWith("条")) {
+            const suit = t.slice(-1);
+            const rank = t.slice(0, -1);
+            return { main: rank, sub: suit, tone: "red" };
+        }
+        if (t.includes("督")) return { main: t, sub: "督", tone: "gold" };
+        if (miscSet.has(t)) return { main: t, sub: "杂", tone: "red" };
+        return { main: t, sub: "", tone: "black" };
+    }
+
+    function paintCards(root) {
+        const cards = root.querySelectorAll(".playing-card");
+        cards.forEach((el) => {
+            const raw = el.getAttribute("data-tile") || el.textContent || "";
+            const { main, sub, tone } = parseTile(raw);
+            el.innerHTML = "<span class=\"pc-main\"></span><span class=\"pc-sub\"></span>";
+            el.querySelector(".pc-main").textContent = main || raw;
+            el.querySelector(".pc-sub").textContent = sub || "\u00a0";
+            el.classList.remove("is-red", "is-black", "is-gold");
+            el.classList.add(tone === "red" ? "is-red" : tone === "gold" ? "is-gold" : "is-black");
+        });
+    }
+
+    const handRoot = document.getElementById("handTiles");
+    if (handRoot) paintCards(handRoot);
+
+    const tileHidden = document.getElementById("tileHidden");
+    const meldTileHidden = document.getElementById("meldTileHidden");
+    const substituteHidden = document.getElementById("substituteHidden");
+    const longTileHidden = document.getElementById("longTileHidden");
+
+    const tileSelect = document.getElementById("tileSelect");
+    const meldTileSelect = document.getElementById("meldTileSelect");
+    const substituteSelect = document.getElementById("substituteSelect");
+    const longTileSelect = document.getElementById("longTileSelect");
+
+    function copySelectsToHiddens() {
+        if (tileHidden && tileSelect) tileHidden.value = tileSelect.value;
+        if (meldTileHidden && meldTileSelect) meldTileHidden.value = meldTileSelect.value;
+        if (substituteHidden && substituteSelect) substituteHidden.value = substituteSelect.value || "";
+        if (longTileHidden && longTileSelect && longTileSelect.value) longTileHidden.value = longTileSelect.value;
+    }
+
+    function syncSelectsFromTile(tileText) {
+        if (!tileText) return;
+        if (tileSelect) tileSelect.value = tileText;
+        if (meldTileSelect) {
+            const ok = Array.from(meldTileSelect.options).some(o => o.value === tileText);
+            if (ok) meldTileSelect.value = tileText;
+        }
+        if (longTileSelect) {
+            const ok = Array.from(longTileSelect.options).some(o => o.value === tileText);
+            if (ok) longTileSelect.value = tileText;
+        }
+    }
+
+    function pickSubstituteFor(tileText) {
+        if (!substituteSelect) return;
+        const tryList = [];
+        if (tileText.includes("万")) tryList.push("万督");
+        if (tileText.includes("筒")) tryList.push("筒督");
+        if (tileText.includes("条")) tryList.push("条督");
+        if (miscSet.has(tileText)) tryList.push("妖督");
+        for (const s of tryList) {
+            if (Array.from(substituteSelect.options).some(o => o.value === s)) {
+                substituteSelect.value = s;
+                return;
+            }
+        }
+    }
+
+    function highlight(tileText) {
+        document.querySelectorAll("#handTiles .playing-card").forEach((el) => {
+            const t = el.getAttribute("data-tile") || "";
+            el.classList.toggle("is-selected", t === tileText);
+        });
+    }
+
+    document.querySelectorAll("#handTiles .playing-card").forEach((el) => {
+        el.addEventListener("click", () => {
+            const tileText = el.getAttribute("data-tile") || "";
+            if (!tileText) return;
+            syncSelectsFromTile(tileText);
+            pickSubstituteFor(tileText);
+            copySelectsToHiddens();
+            highlight(tileText);
+        });
+        el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                el.click();
+            }
+        });
+    });
+
+    if (tileSelect) tileSelect.addEventListener("change", () => {
+        copySelectsToHiddens();
+        highlight(tileSelect.value);
+    });
+    if (meldTileSelect) meldTileSelect.addEventListener("change", copySelectsToHiddens);
+    if (substituteSelect) substituteSelect.addEventListener("change", copySelectsToHiddens);
+    if (longTileSelect) longTileSelect.addEventListener("change", copySelectsToHiddens);
+
+    const df = document.getElementById("discardForm");
+    if (df) df.addEventListener("submit", copySelectsToHiddens);
+
+    const mf = document.getElementById("meldForm");
+    if (mf) mf.addEventListener("submit", copySelectsToHiddens);
+
+    const lf = document.getElementById("longForm");
+    if (lf) lf.addEventListener("submit", copySelectsToHiddens);
+
+    copySelectsToHiddens();
+    const first = document.querySelector("#handTiles .playing-card");
+    if (first) {
+        const t = first.getAttribute("data-tile");
+        highlight(t);
+    }
+})();
+</script>
+
+</body>
+</html>
