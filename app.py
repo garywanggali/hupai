@@ -1748,6 +1748,8 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     # macOS 的「隔空播放接收器」常占用 5000 并返回 HTTP 403，勿用 5000
-    port = int(os.environ.get("PORT", "5001"))
-    print(f"虎牌: http://127.0.0.1:{port}/start")
-    app.run(debug=True, host="127.0.0.1", port=port)
+    port = int(os.environ.get("PORT", "5007"))
+    host = os.environ.get("HOST", "127.0.0.1")
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
+    print(f"虎牌: http://{host}:{port}/start")
+    app.run(debug=debug, host=host, port=port)
