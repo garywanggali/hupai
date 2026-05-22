@@ -13,8 +13,10 @@
             --gold-deep: #c9a227;
             --gold-shadow: rgba(0, 0, 0, 0.35);
             --ink: #1a1a1a;
-            --card-w: 52px;
-            --card-h: 76px;
+            --card-w: 48px;
+            --card-h: 132px;
+            --tile-meld-w: 26px;
+            --tile-meld-h: 72px;
             --radius-card: 8px;
             --seat-name: rgba(255, 255, 255, 0.92);
             --muted: rgba(255, 255, 255, 0.65);
@@ -224,7 +226,6 @@
             flex-wrap: wrap;
             gap: 6px;
             justify-content: center;
-            margin-bottom: 12px;
             min-height: 28px;
         }
 
@@ -239,48 +240,63 @@
 
         .meld-pill b { color: var(--gold); font-weight: 600; }
 
-        .river {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            justify-content: center;
-            align-items: center;
-            padding: 14px 12px;
-            min-height: 96px;
-            border-radius: 16px;
-            background: rgba(0, 0, 0, 0.22);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        .meld-pill.is-concealed {
+            opacity: 0.72;
+            border-style: dashed;
         }
 
-        .river-empty {
-            font-size: 13px;
-            color: var(--muted);
+        .meld-pill.is-open {
+            border-color: rgba(247, 231, 168, 0.75);
+            box-shadow: 0 0 12px rgba(247, 231, 168, 0.2);
         }
 
-        .river-card {
-            display: inline-flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-width: 44px;
-            height: 62px;
-            padding: 4px 6px;
-            border-radius: 8px;
-            background: linear-gradient(180deg, #fff, #f0f0f0);
-            color: #111;
-            font-size: 11px;
-            font-weight: 700;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        .river-card small {
-            display: block;
-            margin-top: 2px;
+        .meld-tag {
             font-size: 9px;
-            font-weight: 600;
-            color: #666;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 4px;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .meld-tag--dark {
+            background: rgba(0, 0, 0, 0.35);
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        .meld-tag--open {
+            background: rgba(247, 231, 168, 0.25);
+            color: var(--gold);
+        }
+
+        .tile-scan {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .tile-scan--meld {
+            width: var(--tile-meld-w);
+            max-height: var(--tile-meld-h);
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .tile-scan--lg {
+            width: 52px;
+            max-height: 144px;
+            margin: 0 auto;
+        }
+
+        .meld-pill .tile-row {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 2px;
+            vertical-align: middle;
         }
 
         .draw-pop {
@@ -324,7 +340,7 @@
             display: flex;
             align-items: flex-end;
             justify-content: center;
-            gap: 0;
+            gap: 10px;
             padding: 0 8px;
             min-height: calc(var(--card-h) + 18px);
         }
@@ -334,23 +350,19 @@
             flex: 0 0 auto;
             width: var(--card-w);
             height: var(--card-h);
-            margin-left: -18px;
             border-radius: var(--radius-card);
-            background: linear-gradient(180deg, #ffffff 0%, #f3f3f3 55%, #e8e8e8 100%);
-            border: 1px solid rgba(0, 0, 0, 0.12);
+            background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
+            border: 1px solid rgba(0, 0, 0, 0.1);
             box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
             cursor: pointer;
             user-select: none;
             transition: transform 0.12s ease, box-shadow 0.12s ease, margin 0.12s ease;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 6px 4px;
-            color: #111;
+            padding: 3px 2px;
+            overflow: hidden;
         }
-
-        .hand-fan .playing-card:first-child { margin-left: 0; }
 
         .playing-card:hover {
             transform: translateY(-10px) scale(1.03);
@@ -365,28 +377,14 @@
             outline-offset: 1px;
         }
 
-        .playing-card .pc-main {
-            font-size: 15px;
+        .playing-card .tile-fallback {
+            font-size: 11px;
             font-weight: 800;
-            line-height: 1.1;
             text-align: center;
+            color: #111;
+            line-height: 1.2;
+            padding: 4px 2px;
         }
-
-        .playing-card .pc-sub {
-            margin-top: 2px;
-            font-size: 10px;
-            font-weight: 700;
-            opacity: 0.75;
-        }
-
-        .playing-card.is-red .pc-main,
-        .playing-card.is-red .pc-sub { color: #b42318; }
-
-        .playing-card.is-black .pc-main,
-        .playing-card.is-black .pc-sub { color: #111; }
-
-        .playing-card.is-gold .pc-main,
-        .playing-card.is-gold .pc-sub { color: #7a5200; }
 
         .btn-bar {
             display: flex;
@@ -494,9 +492,203 @@
             margin: 0;
         }
 
+        /* 胡牌结算 */
+        .win-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            padding-top: calc(20px + env(safe-area-inset-top));
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+            background: rgba(4, 12, 8, 0.72);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            animation: win-fade-in 0.35s ease;
+        }
+
+        @keyframes win-fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes win-card-in {
+            from { opacity: 0; transform: translateY(24px) scale(0.94); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes win-glow {
+            0%, 100% { opacity: 0.45; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.08); }
+        }
+
+        .win-card {
+            position: relative;
+            width: min(100%, 360px);
+            padding: 28px 24px 22px;
+            border-radius: 24px;
+            text-align: center;
+            color: #2a1a00;
+            background:
+                linear-gradient(165deg, #fffef5 0%, #fff3c4 38%, #f0d66a 72%, #d4a82a 100%);
+            border: 2px solid rgba(255, 255, 255, 0.65);
+            box-shadow:
+                0 0 0 1px rgba(122, 82, 0, 0.15),
+                0 24px 60px rgba(0, 0, 0, 0.45),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            animation: win-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .win-card::before {
+            content: "";
+            position: absolute;
+            inset: -40px;
+            z-index: -1;
+            background: radial-gradient(circle, rgba(247, 231, 168, 0.35) 0%, transparent 65%);
+            animation: win-glow 2.5s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .win-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 12px;
+            border-radius: 50%;
+            font-size: 40px;
+            font-weight: 900;
+            color: #5c3d00;
+            background: linear-gradient(145deg, #fff 0%, #ffe9a8 100%);
+            border: 3px solid rgba(201, 162, 39, 0.55);
+            box-shadow: 0 8px 24px rgba(122, 82, 0, 0.25);
+            line-height: 1;
+        }
+
+        .win-kind {
+            margin: 0 0 4px;
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            color: #5c3d00;
+        }
+
+        .win-player {
+            margin: 0 0 18px;
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(42, 26, 0, 0.72);
+        }
+
+        .win-tile-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            padding: 12px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.45);
+            border: 1px solid rgba(201, 162, 39, 0.25);
+        }
+
+        .win-tile-wrap .tile-scan {
+            width: 44px;
+            max-height: 120px;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+        }
+
+        .win-tile-meta {
+            font-size: 12px;
+            font-weight: 700;
+            color: rgba(42, 26, 0, 0.65);
+        }
+
+        .win-scores {
+            margin-bottom: 20px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(201, 162, 39, 0.2);
+            text-align: left;
+        }
+
+        .win-score-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(42, 26, 0, 0.75);
+            border-bottom: 1px dashed rgba(201, 162, 39, 0.25);
+        }
+
+        .win-score-row:last-of-type {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .win-score-row .amt {
+            font-variant-numeric: tabular-nums;
+            font-weight: 800;
+            color: #7a5200;
+        }
+
+        .win-score-total {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-top: 12px;
+            padding-top: 14px;
+            border-top: 2px solid rgba(201, 162, 39, 0.35);
+        }
+
+        .win-score-total .label {
+            font-size: 15px;
+            font-weight: 800;
+            color: #5c3d00;
+        }
+
+        .win-score-total .amt {
+            font-size: 36px;
+            font-weight: 900;
+            font-variant-numeric: tabular-nums;
+            color: #b42318;
+            line-height: 1;
+            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+        }
+
+        .win-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .win-actions .btn-gold {
+            width: 100%;
+            min-width: 0;
+            font-size: 16px;
+            padding: 14px 20px;
+        }
+
+        .win-actions .btn-outline {
+            width: 100%;
+            min-width: 0;
+            color: #5c3d00;
+            border-color: rgba(92, 61, 0, 0.35);
+            background: rgba(255, 255, 255, 0.35);
+        }
+
         @media (max-width: 380px) {
-            :root { --card-w: 46px; --card-h: 70px; }
-            .playing-card { margin-left: -16px; }
+            :root {
+                --card-w: 42px;
+                --card-h: 116px;
+            }
+            .hand-fan { gap: 8px; }
         }
     </style>
 </head>
@@ -509,7 +701,7 @@
             <span class="chip">本家 · P{{ human_player_index + 1 }}（行牌位 P{{ clock_player_index + 1 }}）</span>
         </div>
         <span class="chip chip--dim">
-            {% if claim_waiting_human %}等你胡 / 吃 / 碰 / 过{% elif claim_state %}碰牌询问中{% elif needs_wall_draw %}待摸牌{% else %}可出牌 / 操作{% endif %}
+            {% if claim_waiting_human %}等你胡 / 吃 / 碰 / 开 / 过{% elif claim_state %}碰牌询问中{% elif needs_wall_draw %}待摸牌{% else %}可出牌 / 操作{% endif %}
             {% if is_dealer_opening %} · 庄家首出{% endif %}
         </span>
     </header>
@@ -558,16 +750,20 @@
         <div class="melds-ribbon" aria-label="本家明牌">
             {% if melds %}
                 {% for meld in melds %}
-                    {% if meld|length == 3 and meld[2] == "long" %}
-                        <span class="meld-pill">拢 <b>{{ meld[0] }}</b>×4 <small style="opacity:.7">+70</small></span>
+                    {% if meld|length == 3 and meld[2] == "long_open" %}
+                        <span class="meld-pill is-open">拢 <span class="meld-tag meld-tag--open">明</span><span class="tile-row">{% for _ in range(4) %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" />{% endfor %}</span> <small style="opacity:.7">+{{ meld|meld_display_score }}</small></span>
+                    {% elif meld|length == 3 and meld[2] == "long" %}
+                        <span class="meld-pill is-concealed">拢 <span class="meld-tag meld-tag--dark">暗</span><span class="tile-row">{% for _ in range(4) %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" />{% endfor %}</span> <small style="opacity:.7">+{{ meld|meld_display_score }}</small></span>
+                    {% elif meld|length == 3 and meld[2] == "ke_open" %}
+                        <span class="meld-pill is-open">磕 <span class="meld-tag meld-tag--open">明</span><span class="tile-row">{% if meld[1] %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" /><img src="{{ meld[0]|tile_image_url }}" alt="" class="tile-scan tile-scan--meld" aria-hidden="true" /><img src="{{ meld[1]|tile_image_url }}" alt="{{ meld[1] }}" class="tile-scan tile-scan--meld" />{% else %}{% for _ in range(3) %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" />{% endfor %}{% endif %}</span> <small style="opacity:.7">+{{ meld|meld_display_score }}</small></span>
                     {% elif meld|length == 4 and meld[3] == "chi" %}
-                        <span class="meld-pill">吃 <b>{{ meld[0] }}</b> <b>{{ meld[1] }}</b> <b>{{ meld[2] }}</b> <small style="opacity:.7">+0</small></span>
+                        <span class="meld-pill">吃 <span class="tile-row">{% for t in [meld[0], meld[1], meld[2]] %}<img src="{{ t|tile_image_url }}" alt="{{ t }}" class="tile-scan tile-scan--meld" />{% endfor %}</span> <small style="opacity:.7">+0</small></span>
                     {% elif meld|length == 3 and meld[2] == "pong" %}
-                        <span class="meld-pill">碰 <b>{{ meld[0] }}</b>×3 <small style="opacity:.7">+10</small></span>
-                    {% elif meld[1] %}
-                        <span class="meld-pill">磕 <b>{{ meld[0] }}</b>×2+<b>{{ meld[1] }}</b> <small style="opacity:.7">+20</small></span>
-                    {% else %}
-                        <span class="meld-pill">磕 <b>{{ meld[0] }}</b>×3 <small style="opacity:.7">+20</small></span>
+                        <span class="meld-pill">碰 <span class="tile-row">{% if meld[1] %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" /><img src="{{ meld[0]|tile_image_url }}" alt="" class="tile-scan tile-scan--meld" aria-hidden="true" /><img src="{{ meld[1]|tile_image_url }}" alt="{{ meld[1] }}" class="tile-scan tile-scan--meld" />{% else %}{% for _ in range(3) %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" />{% endfor %}{% endif %}</span> <small style="opacity:.7">+{{ meld|meld_display_score }}</small></span>
+                    {% elif meld|length == 2 and meld[1] %}
+                        <span class="meld-pill is-concealed">磕 <span class="meld-tag meld-tag--dark">暗</span><span class="tile-row"><img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" /><img src="{{ meld[0]|tile_image_url }}" alt="" class="tile-scan tile-scan--meld" aria-hidden="true" /><img src="{{ meld[1]|tile_image_url }}" alt="{{ meld[1] }}" class="tile-scan tile-scan--meld" /></span> <small style="opacity:.7">+{{ meld|meld_display_score }}</small></span>
+                    {% elif meld|length == 2 %}
+                        <span class="meld-pill is-concealed">磕 <span class="meld-tag meld-tag--dark">暗</span><span class="tile-row">{% for _ in range(3) %}<img src="{{ meld[0]|tile_image_url }}" alt="{{ meld[0] }}" class="tile-scan tile-scan--meld" />{% endfor %}</span> <small style="opacity:.7">+{{ meld|meld_display_score }}</small></span>
                     {% endif %}
                 {% endfor %}
             {% else %}
@@ -575,26 +771,15 @@
             {% endif %}
         </div>
 
-        <div class="river" id="discardRiver">
-            {% if discarded %}
-                {% for player_idx, tile in discarded %}
-                    <span class="river-card">
-                        {{ tile }}
-                        <small>P{{ player_idx + 1 }}</small>
-                    </span>
-                {% endfor %}
-            {% else %}
-                <span class="river-empty">出牌会显示在中央河牌区</span>
-            {% endif %}
-        </div>
-
         {% if claim_state %}
         <div class="draw-pop">
             <p class="hint-tiny" style="color:rgba(255,255,255,.92);margin:0 0 8px;font-size:14px;">
-                <b>P{{ claim_state.discarder + 1 }}</b> 打出 <b>{{ claim_state.tile }}</b>。
-                其余三家按 <b>下家→对家→上家</b> 依次决定荣胡、吃、碰或過；人机自动处理。
+                <b>P{{ claim_state.discarder + 1 }}</b> 打出
+                {% set claim_img = claim_state.tile|tile_image_url %}
+                {% if claim_img %}<img src="{{ claim_img }}" alt="{{ claim_state.tile }}" class="tile-scan tile-scan--meld" style="vertical-align:middle" />{% else %}<b>{{ claim_state.tile }}</b>{% endif %}。
+                其余三家按 <b>下家→对家→上家</b> 依次决定荣胡、吃、碰、开或過。
                 {% if claim_waiting_human %}
-                    <b>现轮到你</b>：胡 / 吃（仅当上家刚打出的这张）/ 碰 / 过由你自选；不成立会提示。
+                    <b>现轮到你</b>：胡 / 吃（上家）/ 碰 / <b>开</b>（暗磕或暗拢与这张同点，翻明且该组×2 分，再摸打）/ 过。
                 {% endif %}
             </p>
         </div>
@@ -604,28 +789,48 @@
         </div>
         {% elif last_wall_draw_tile %}
         <div class="draw-pop">
-            <div class="big">本摸：{{ last_wall_draw_tile }}</div>
+            {% set draw_img = last_wall_draw_tile|tile_image_url %}
+            {% if draw_img %}
+                <img src="{{ draw_img }}" alt="本摸 {{ last_wall_draw_tile }}" class="tile-scan tile-scan--lg" />
+                <p class="hint-tiny" style="margin:6px 0 0;color:rgba(255,255,255,.75);">本摸 · {{ last_wall_draw_tile }}</p>
+            {% else %}
+                <div class="big">本摸：{{ last_wall_draw_tile }}</div>
+            {% endif %}
         </div>
         {% endif %}
     </main>
 
     {% if phase in ('turn', 'claim') %}
     <footer class="dock">
+        {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}
+        <div class="play-flash" role="alert" style="margin:0 12px 10px;padding:10px 14px;border-radius:10px;background:rgba(180,40,40,.92);color:#fff;font-size:14px;">{% for category, message in messages %}<p style="margin:0;">{{ message }}</p>{% endfor %}</div>
+        {% endif %}{% endwith %}
         <div class="hand-wrap">
             <div class="hand-fan" id="handTiles">
                 {% for tile in hand %}
-                    <div class="playing-card" data-tile="{{ tile }}" role="button" tabindex="0">
-                        <span class="pc-main">{{ tile }}</span>
+                    <div class="playing-card" data-tile="{{ tile }}" data-hand-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ tile }}">
+                        {% set hand_img = tile|tile_image_url %}
+                        {% if hand_img %}
+                            <img src="{{ hand_img }}" alt="" class="tile-scan" />
+                        {% else %}
+                            <span class="tile-fallback">{{ tile }}</span>
+                        {% endif %}
                     </div>
                 {% endfor %}
             </div>
         </div>
 
+        {% if human_turn_controls %}
         {% if claim_waiting_human %}
         <div class="btn-bar">
             <form method="post" id="rongHuForm">
-                <button type="submit" name="action" value="rong_hu" class="btn-gold">胡（荣）</button>
+                <button type="submit" name="action" value="rong_hu" class="btn-gold" {% if not can_rong_hu %}disabled title="当前牌型不能荣胡"{% endif %}>胡（荣）</button>
             </form>
+            {% if can_zimo_hu %}
+            <form method="post" id="zimoClaimForm">
+                <button type="submit" name="action" value="hu" class="btn-gold">胡（自摸）</button>
+            </form>
+            {% endif %}
             {% if claim_chi_eligible %}
                 {% for op in claim_chi_options %}
                 <form method="post" class="chi-opt-form">
@@ -648,28 +853,46 @@
                 </form>
                 {% endif %}
             {% endif %}
-            <form method="post" id="pongClaimForm">
-                <button type="submit" name="action" value="pong_claim" class="btn-gold">碰（+10）</button>
+            {% if claim_pong_eligible %}
+            <form method="post" id="pongClaimForm" class="pong-claim-form" style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <input type="hidden" name="action" value="pong_claim" />
+                {% if claim_pong_substitutes|length == 1 %}
+                <input type="hidden" name="pong_substitute" value="{{ claim_pong_substitutes[0] }}" />
+                {% elif claim_pong_substitutes|length > 1 %}
+                <select name="pong_substitute" class="btn-outline" style="padding:8px;border-radius:8px;" aria-label="碰牌用督">
+                    {% for du in claim_pong_substitutes %}<option value="{{ du }}">{{ du }}</option>{% endfor %}
+                </select>
+                {% endif %}
+                <button type="submit" class="btn-gold">碰（+{{ claim_tile|pong_display_score }}）</button>
             </form>
+            {% endif %}
+            {% if claim_kai_eligible %}
+            <form method="post" id="kaiClaimForm">
+                <button type="submit" name="action" value="kai_claim" class="btn-gold">开（×2 分 · 摸打）</button>
+            </form>
+            {% endif %}
             <form method="post" id="pongPassForm">
                 <button type="submit" name="action" value="pong_pass" class="btn-outline">过</button>
             </form>
         </div>
-        <p class="hint-tiny" style="text-align:center;margin:8px 12px 0;">吃：仅<strong>上家</strong>这张可与手牌二张成顺（万/筒/条）；<strong>总督</strong>可顶替缺张。吃完由你出牌、不计分。碰须两张同名牌。</p>
+        <p class="hint-tiny" style="text-align:center;margin:8px 12px 0;">吃：仅<strong>上家</strong>这张可与手牌二张成顺（万/筒/条）；<strong>总督</strong>可顶替缺张。<strong>碰</strong>须与河牌同点三张，手牌可一张同点+一张督（杂牌用妖督，数牌用花色督或妖督代「一」，<strong>总督</strong>任意）。<strong>开</strong>：暗磕或暗拢与河牌同点可翻明，再摸打。{% if claim_pong_then_hu %} <strong>碰后若已是一对将+全顺子，可直接胡。</strong>{% endif %}</p>
         {% elif needs_wall_draw %}
         <div class="btn-bar">
+            <form method="post" id="huForm">
+                <button type="submit" name="action" value="hu" class="{% if can_zimo_hu %}btn-gold{% else %}btn-outline{% endif %}">胡牌</button>
+            </form>
             <form method="post" id="drawWallForm">
                 <button type="submit" name="action" value="draw_wall" class="btn-gold">摸牌</button>
             </form>
         </div>
         {% else %}
         <div class="btn-bar">
+            <form method="post" id="huForm">
+                <button type="submit" name="action" value="hu" class="{% if can_zimo_hu %}btn-gold{% else %}btn-outline{% endif %}" title="{% if can_zimo_hu %}当前牌型可胡{% else %}牌型未胡时可点，服务器会提示原因{% endif %}">胡牌</button>
+            </form>
             <form method="post" id="discardForm">
                 <input type="hidden" name="tile" id="tileHidden" value="{{ hand[0] if hand else '' }}" />
-                <button type="submit" class="btn-gold" {% if not hand %}disabled{% endif %}>出牌</button>
-            </form>
-            <form method="post" id="huForm">
-                <button type="submit" name="action" value="hu" class="btn-outline">胡牌</button>
+                <button type="submit" class="btn-outline" {% if not hand %}disabled{% endif %}>出牌</button>
             </form>
             <form method="post" id="meldForm">
                 <input type="hidden" name="meld_tile" id="meldTileHidden" value="{{ hand[0] if hand else '' }}" />
@@ -705,9 +928,9 @@
                     </select>
                 </div>
                 <div class="field">
-                    <label for="substituteSelect">督牌（可选）</label>
+                    <label for="substituteSelect">督牌（2张同点+督磕时必选，不选则自动用总督等）</label>
                     <select id="substituteSelect">
-                        <option value="">无</option>
+                        <option value="">自动 / 无刻督</option>
                         {% for d in player_du_pai %}
                             <option value="{{ d }}">{{ d }}</option>
                         {% endfor %}
@@ -726,46 +949,70 @@
                         {% endif %}
                     </select>
                 </div>
-                <p class="hint-tiny">出牌后自己不摸牌，轮到下家须先摸牌。胡牌判定仍为占位。</p>
+                <p class="hint-tiny">{% if after_claim_meld_turn and can_zimo_hu %}碰/吃/开之后若牌型为<strong>一对将+全顺子</strong>可直接胡。{% else %}须先摸牌才能出牌或胡；胡牌须<strong>一对将 + 全部为顺子</strong>（不能含刻子）。{% endif %}</p>
             </div>
         </details>
         {% endif %}
+        {% elif claim_state %}
+        <p class="hint-tiny" style="text-align:center;margin:12px;">等待其他玩家响应河牌…</p>
+        {% elif phase == 'turn' and clock_player_index != human_player_index %}
+        <p class="hint-tiny" style="text-align:center;margin:12px;">等待 P{{ clock_player_index + 1 }} 行牌…</p>
+        {% endif %}
     </footer>
+    {% endif %}
+
+    {% if game_result %}
+    <div class="win-overlay" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+        <article class="win-card">
+            <div class="win-badge" aria-hidden="true">胡</div>
+            <h2 class="win-kind" id="winTitle">
+                {% if game_result.kind == 'rong' %}荣胡{% else %}自摸胡{% endif %}
+            </h2>
+            <p class="win-player">玩家 {{ game_result.player_num }} · 胡牌成功</p>
+
+            {% if game_result.win_tile %}
+            <div class="win-tile-wrap">
+                {% set win_img = game_result.win_tile|tile_image_url %}
+                {% if win_img %}
+                    <img src="{{ win_img }}" alt="{{ game_result.win_tile }}" class="tile-scan" />
+                {% endif %}
+                <span class="win-tile-meta">
+                    {% if game_result.kind == 'rong' and game_result.from_player %}
+                        点和 P{{ game_result.from_player }} · {{ game_result.win_tile }}
+                    {% else %}
+                        {{ game_result.win_tile }}
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+
+            <div class="win-scores">
+                <div class="win-score-row">
+                    <span>基础分</span>
+                    <span class="amt">+{{ game_result.base_score }}</span>
+                </div>
+                <div class="win-score-row">
+                    <span>磕 / 拢 / 碰</span>
+                    <span class="amt">+{{ game_result.meld_score }}</span>
+                </div>
+                <div class="win-score-total">
+                    <span class="label">总分</span>
+                    <span class="amt">{{ game_result.total_score }}</span>
+                </div>
+            </div>
+
+            <div class="win-actions">
+                <a href="{{ url_for('start') }}" class="btn-gold">再来一局</a>
+                <a href="{{ url_for('play', dismiss_win=1) }}" class="btn-outline">留在牌桌</a>
+            </div>
+        </article>
+    </div>
     {% endif %}
 </div>
 
 <script>
 (function () {
     const miscSet = new Set(["乌龟", "毛", "千万"]);
-
-    function parseTile(text) {
-        const t = (text || "").trim();
-        if (!t) return { main: "", sub: "", tone: "black" };
-        if (t.endsWith("万") || t.endsWith("筒") || t.endsWith("条")) {
-            const suit = t.slice(-1);
-            const rank = t.slice(0, -1);
-            return { main: rank, sub: suit, tone: "red" };
-        }
-        if (t.includes("督")) return { main: t, sub: "督", tone: "gold" };
-        if (miscSet.has(t)) return { main: t, sub: "杂", tone: "red" };
-        return { main: t, sub: "", tone: "black" };
-    }
-
-    function paintCards(root) {
-        const cards = root.querySelectorAll(".playing-card");
-        cards.forEach((el) => {
-            const raw = el.getAttribute("data-tile") || el.textContent || "";
-            const { main, sub, tone } = parseTile(raw);
-            el.innerHTML = "<span class=\"pc-main\"></span><span class=\"pc-sub\"></span>";
-            el.querySelector(".pc-main").textContent = main || raw;
-            el.querySelector(".pc-sub").textContent = sub || "\u00a0";
-            el.classList.remove("is-red", "is-black", "is-gold");
-            el.classList.add(tone === "red" ? "is-red" : tone === "gold" ? "is-gold" : "is-black");
-        });
-    }
-
-    const handRoot = document.getElementById("handTiles");
-    if (handRoot) paintCards(handRoot);
 
     const tileHidden = document.getElementById("tileHidden");
     const meldTileHidden = document.getElementById("meldTileHidden");
@@ -804,6 +1051,7 @@
         if (tileText.includes("筒")) tryList.push("筒督");
         if (tileText.includes("条")) tryList.push("条督");
         if (miscSet.has(tileText)) tryList.push("妖督");
+        tryList.push("总督");
         for (const s of tryList) {
             if (Array.from(substituteSelect.options).some(o => o.value === s)) {
                 substituteSelect.value = s;
@@ -812,21 +1060,32 @@
         }
     }
 
-    function highlight(tileText) {
+    function highlightHandIndex(handIndex) {
         document.querySelectorAll("#handTiles .playing-card").forEach((el) => {
-            const t = el.getAttribute("data-tile") || "";
-            el.classList.toggle("is-selected", t === tileText);
+            const idx = parseInt(el.getAttribute("data-hand-index"), 10);
+            el.classList.toggle("is-selected", idx === handIndex);
         });
+    }
+
+    function firstHandIndexForTile(tileText) {
+        const cards = document.querySelectorAll("#handTiles .playing-card");
+        for (const el of cards) {
+            if (el.getAttribute("data-tile") === tileText) {
+                return parseInt(el.getAttribute("data-hand-index"), 10);
+            }
+        }
+        return -1;
     }
 
     document.querySelectorAll("#handTiles .playing-card").forEach((el) => {
         el.addEventListener("click", () => {
             const tileText = el.getAttribute("data-tile") || "";
-            if (!tileText) return;
+            const handIndex = parseInt(el.getAttribute("data-hand-index"), 10);
+            if (!tileText || Number.isNaN(handIndex)) return;
             syncSelectsFromTile(tileText);
             pickSubstituteFor(tileText);
             copySelectsToHiddens();
-            highlight(tileText);
+            highlightHandIndex(handIndex);
         });
         el.addEventListener("keydown", (e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -838,7 +1097,8 @@
 
     if (tileSelect) tileSelect.addEventListener("change", () => {
         copySelectsToHiddens();
-        highlight(tileSelect.value);
+        const idx = firstHandIndexForTile(tileSelect.value);
+        if (idx >= 0) highlightHandIndex(idx);
     });
     if (meldTileSelect) meldTileSelect.addEventListener("change", copySelectsToHiddens);
     if (substituteSelect) substituteSelect.addEventListener("change", copySelectsToHiddens);
@@ -856,8 +1116,8 @@
     copySelectsToHiddens();
     const first = document.querySelector("#handTiles .playing-card");
     if (first) {
-        const t = first.getAttribute("data-tile");
-        highlight(t);
+        const idx = parseInt(first.getAttribute("data-hand-index"), 10);
+        if (!Number.isNaN(idx)) highlightHandIndex(idx);
     }
 })();
 </script>
