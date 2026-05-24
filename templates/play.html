@@ -1084,6 +1084,15 @@
             if (!tileText || Number.isNaN(handIndex)) return;
             syncSelectsFromTile(tileText);
             pickSubstituteFor(tileText);
+            /* 补拢：手牌点妖督时，「拢哪张」应对准桌上杂牌磕（乌龟/毛/千万），不是妖督本身 */
+            if (tileText === "妖督" && longTileSelect) {
+                for (const t of ["乌龟", "毛", "千万"]) {
+                    if (Array.from(longTileSelect.options).some((o) => o.value === t)) {
+                        longTileSelect.value = t;
+                        break;
+                    }
+                }
+            }
             copySelectsToHiddens();
             highlightHandIndex(handIndex);
         });

@@ -465,23 +465,23 @@ def _suit_only_sequences(arr9, jokers=0, yi_jokers=0):
             i += 1
         if i >= 9:
             return j == 0 and yi == 0
-        if i > 6:
-            return False
-        na, nj, nyi = list(a), j, yi
-        ok = True
-        for k in range(3):
-            ri = i + k
-            if na[ri] > 0:
-                na[ri] -= 1
-            elif ri == 0 and nyi > 0:
-                nyi -= 1
-            elif nj > 0:
-                nj -= 1
-            else:
-                ok = False
-                break
-        if ok and dfs(na, nj, nyi):
-            return True
+        # 顺子可能从 i 之前开始（如 八万九万 + 万督 作 七八九）
+        for s in range(max(0, i - 2), min(i, 7) + 1):
+            na, nj, nyi = list(a), j, yi
+            ok = True
+            for k in range(3):
+                ri = s + k
+                if na[ri] > 0:
+                    na[ri] -= 1
+                elif ri == 0 and nyi > 0:
+                    nyi -= 1
+                elif nj > 0:
+                    nj -= 1
+                else:
+                    ok = False
+                    break
+            if ok and dfs(na, nj, nyi):
+                return True
         return False
 
     return dfs(list(arr9), jokers, yi_jokers)
@@ -918,13 +918,26 @@ def _meld_can_upgrade_to_long(meld):
 
 
 def _hand_tile_for_supplement_long(hand, tile):
-    """补拢时从手牌支付的一张：同点牌，或数牌对应花色督。"""
-    if hand.count(tile) >= 1:
+    """补拢时从手牌支付的一张：同点牌，或可用督（与磕/碰相同，杂牌可用妖督）。"""
+    tile = _normalize_tile_name(tile)
+    if _hand_count(hand, tile) >= 1:
         return tile
-    du = _suit_du_for(tile)
-    if du and hand.count(du) >= 1:
-        return du
+    for du in _DU_ORDER:
+        if _hand_count(hand, du) >= 1 and _valid_substitute_for_tile(tile, du):
+            return du
     return None
+
+
+def _long_supplement_failure_message(hand, tile):
+    tile = _normalize_tile_name(tile)
+    opts = [f"「{tile}」"]
+    suit_du = _suit_du_for(tile)
+    if suit_du:
+        opts.append(f"「{suit_du}」")
+    if tile in _MISC_ORDER:
+        opts.append("「妖督」")
+    opts.append("「总督」")
+    return f"你没有 {' / '.join(opts)} 用于补拢"
 
 
 def _long_candidate_tiles(hand, player_melds):
@@ -1486,11 +1499,9 @@ def play():
                     continue
                 pay_tile = _hand_tile_for_supplement_long(player_hand, tile_to_long)
                 if not pay_tile:
-                    du_sub = _suit_du_for(tile_to_long)
-                    need_desc = f"「{tile_to_long}」"
-                    if du_sub:
-                        need_desc = f"「{tile_to_long}」或「{du_sub}」"
-                    return f"你没有 {need_desc} 用于补拢", 400
+                    return _play_post_error(
+                        _long_supplement_failure_message(player_hand, tile_to_long)
+                    )
                 player_hand.remove(pay_tile)
                 player_melds[i] = (tile_to_long, None, "long")
                 scores[human_ix] += _long_immediate_score(tile_to_long)
@@ -1518,7 +1529,7 @@ def play():
                     session["draw_pile"] = draw_pile
                 return redirect(url_for("play"))
 
-            return "无法拢牌，条件不满足", 400
+            return _play_post_error("无法拢牌，条件不满足")
 
         # === 处理磕牌 ===
         elif phase == "turn" and "meld_tile" in request.form:
@@ -1740,6 +1751,12 @@ def play():
         claim_pong_then_hu=claim_pong_then_hu,
         after_claim_meld_turn=bool(session.get("after_claim_meld_turn")),
     )
+
+
+@app.errorhandler(500)
+def _internal_server_error(exc):
+    logger.exception("未捕获的服务器错误: %s", exc)
+    return "服务器内部错误，请查看日志或访问 /start 重开一局。", 500
 
 
 if __name__ == "__main__":
