@@ -1753,10 +1753,14 @@ def play():
     )
 
 
-@app.errorhandler(500)
-def _internal_server_error(exc):
-    logger.exception("未捕获的服务器错误: %s", exc)
-    return "服务器内部错误，请查看日志或访问 /start 重开一局。", 500
+@app.errorhandler(Exception)
+def _log_unhandled_exception(exc):
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(exc, HTTPException):
+        return exc
+    logger.exception("未捕获异常")
+    return "服务器内部错误，请查看 ~/hupai.log 或访问 /start 重开一局。", 500
 
 
 if __name__ == "__main__":
