@@ -465,8 +465,8 @@ def _suit_only_sequences(arr9, jokers=0, yi_jokers=0):
             i += 1
         if i >= 9:
             return j == 0 and yi == 0
-        # 顺子可能从 i 之前开始（如 八万九万 + 万督 作 七八九）
-        for s in range(max(0, i - 2), min(i, 7) + 1):
+        # 顺子可能从 i 之前开始（如 八万九万 + 万督 作 七八九）；起点 s 最大为 6（s+2≤8）
+        for s in range(max(0, i - 2), min(i, 6) + 1):
             na, nj, nyi = list(a), j, yi
             ok = True
             for k in range(3):
