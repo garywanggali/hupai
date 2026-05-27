@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>四人联机 · 虎牌</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(160deg, #06140c, #0d5a32 55%, #06140c);
+            color: #f7e7a8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(247, 231, 168, 0.25);
+            border-radius: 16px;
+            padding: 28px 32px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+        }
+        h1 { margin: 0 0 8px; font-size: 1.5rem; }
+        p { margin: 0 0 16px; opacity: 0.85; line-height: 1.5; }
+        .room-code {
+            font-size: 2rem;
+            letter-spacing: 0.2em;
+            text-align: center;
+            margin: 16px 0;
+            font-weight: 700;
+        }
+        .seats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .seat {
+            border: 1px solid rgba(247, 231, 168, 0.3);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+        }
+        .seat.taken { background: rgba(255, 255, 255, 0.08); }
+        .seat.mine { border-color: #c9a227; box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.35); }
+        button, .btn {
+            display: inline-block;
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            margin-top: 8px;
+        }
+        .btn-gold {
+            background: linear-gradient(180deg, #f7e7a8, #c9a227);
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+        .btn-outline {
+            background: transparent;
+            color: #f7e7a8;
+            border: 1px solid rgba(247, 231, 168, 0.45);
+        }
+        .seat form button {
+            margin-top: 8px;
+            background: rgba(247, 231, 168, 0.15);
+            color: #f7e7a8;
+            border: 1px solid rgba(247, 231, 168, 0.35);
+        }
+        .seat.taken form { display: none; }
+        .status { text-align: center; margin: 12px 0; opacity: 0.9; }
+        .flash { color: #ffb4b4; margin-bottom: 12px; }
+        .links { margin-top: 20px; font-size: 0.9rem; text-align: center; }
+        .links a { color: #f7e7a8; opacity: 0.75; }
+        input[type=text] {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(247, 231, 168, 0.35);
+            background: rgba(0, 0, 0, 0.25);
+            color: #f7e7a8;
+            font-size: 1rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>四人联机</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for cat, msg in messages %}
+        <p class="flash">{{ msg }}</p>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% if not code %}
+        <p>创建房间后把房间号发给另外三位玩家；四人齐座后自动开局。</p>
+        <form method="post" action="{{ url_for('online_create') }}">
+            <button type="submit" class="btn-gold">创建房间</button>
+        </form>
+        <form method="get" action="{{ url_for('online_home') }}" style="margin-top:16px">
+            <input type="text" name="join" placeholder="输入房间号加入" maxlength="6" pattern="[A-Za-z0-9]{4,6}">
+            <button type="submit" class="btn-outline">进入房间</button>
+        </form>
+        {% else %}
+        <p>房间号（分享给牌友）</p>
+        <div class="room-code">{{ code }}</div>
+        <p class="status">
+            {% if status == 'playing' %}
+            对局进行中…
+            {% else %}
+            已入座 {{ seats|length }} / 4 人
+            {% endif %}
+        </p>
+        <div class="seats">
+            {% for s in range(4) %}
+            <div class="seat {% if s in seats %}taken{% endif %} {% if my_seat == s %}mine{% endif %}">
+                <div>座位 {{ s + 1 }}</div>
+                {% if s in seats %}
+                <small>{% if my_seat == s %}你{% else %}已占用{% endif %}</small>
+                {% else %}
+                <form method="post" action="{{ url_for('multi_join', code=code) }}">
+                    <input type="hidden" name="seat" value="{{ s }}">
+                    <button type="submit">入座</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% if status == 'playing' and my_seat is not none %}
+        <a href="{{ url_for('multi_play', code=code) }}" class="btn btn-gold">进入牌桌</a>
+        {% elif my_seat is not none and seats|length < 4 %}
+        <p class="status">等待其他玩家入座…</p>
+        {% endif %}
+        {% endif %}
+
+        <div class="links">
+            <a href="{{ url_for('start') }}">单机练习</a>
+            ·
+            <a href="{{ url_for('online_home') }}">联机首页</a>
+        </div>
+    </div>
+
+    {% if code and status != 'playing' %}
+    <script>
+    (function () {
+        const v = {{ version|default(0) }};
+        const pollUrl = "{{ url_for('multi_poll', code=code) }}?v=" + v;
+        setInterval(async () => {
+            try {
+                const r = await fetch(pollUrl);
+                const j = await r.json();
+                if (j.changed || (j.status === "playing" && j.seat_count >= 4)) {
+                    location.reload();
+                }
+            } catch (e) {}
+        }, 2000);
+    })();
+    </script>
+    {% endif %}
+
+</body>
+</html>

@@ -1,13 +1,67 @@
 from collections import Counter
 
-from flask import Flask, flash, session, render_template, request, redirect, url_for
+from flask import Flask, flash, g, jsonify, session, render_template, request, redirect, url_for
 import logging
 import os
 import random
+import secrets
+
+from game_state import GameState, state_from_storage, state_to_storage
+import room_store
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key_here"  # 必须设置，用于 session
+app.secret_key = os.environ.get("SECRET_KEY", "your_secret_key_here")
 logger = logging.getLogger(__name__)
+
+room_store.init_db()
+
+
+def _play_redirect():
+    return g.get("play_redirect") or url_for("play")
+
+
+def _ensure_player_token():
+    token = session.get("player_token")
+    if not token:
+        token = secrets.token_hex(16)
+        session["player_token"] = token
+    return token
+
+
+def _deal_new_game_state():
+    """发一局新牌，返回可写入 session / SQLite 的 dict。"""
+    num_players = 4
+    hands = [[] for _ in range(num_players)]
+    draw_pile = new_shuffled_draw_pile()
+    zhuang = 0
+    for i in range(num_players):
+        n = 17 if i == zhuang else 16
+        for _ in range(n):
+            hands[i].append(draw_pile.pop())
+    return {
+        "hands": hands,
+        "num_players": num_players,
+        "current_player": 0,
+        "draw_pile": draw_pile,
+        "discarded": [],
+        "melds": [[] for _ in range(num_players)],
+        "scores": [0] * num_players,
+        "phase": "turn",
+        "zhuang": zhuang,
+        "dealer_opening_done": False,
+        "has_drawn_wall_this_turn": True,
+    }
+
+
+def _player_can_act(state, seat):
+    cs = state.get("claim_state")
+    if cs and cs.get("idx", 0) < len(cs.get("queue", [])):
+        return cs["queue"][cs["idx"]] == seat
+    return (
+        state.get("phase") == "turn"
+        and state.get("current_player") == seat
+        and not cs
+    )
 
 # 普通牌：4 套；督牌：每种整局只出现 1 张
 BASE_TILES = [
@@ -41,21 +95,37 @@ def _pong_immediate_score(tile):
 def _is_du_tile(tile):
     return bool(tile) and "督" in tile
 
+def _is_rank_suit_tile(tile):
+    """标准数牌（一二…九 + 万/筒/条）；千万等杂牌不算万子。"""
+    tile = _normalize_tile_name(tile)
+    if not tile or len(tile) != 2 or tile in _MISC_ORDER:
+        return False
+    r, suf = tile[0], tile[1]
+    return r in _RANK_CHARS and suf in ("万", "筒", "条")
+
+
 def _suit_du_for(tile):
-    """数牌对应花色督：六万->万督，三筒->筒督，九条->条督；非数牌返回 None。"""
-    if not tile:
+    """二～九数牌对应花色督；一万/一筒/一条与杂牌归妖督，返回 None。"""
+    tile = _normalize_tile_name(tile)
+    if not _is_rank_suit_tile(tile):
         return None
-    if tile.endswith("万"):
+    if tile[0] == "一":
+        return None
+    suf = tile[1]
+    if suf == "万":
         return "万督"
-    if tile.endswith("筒"):
+    if suf == "筒":
         return "筒督"
-    if tile.endswith("条"):
+    if suf == "条":
         return "条督"
     return None
 
 
 def _valid_substitute_for_tile(tile, substitute):
-    """督牌能否代替该牌面（磕、碰共用）：总督任意；花色督同门；妖督仅杂牌或一万/一筒/一条。"""
+    """督牌能否代替该牌面（磕、碰共用）。
+
+    总督任意；花色督只管本门二～九；妖督管杂牌及一万/一筒/一条。
+    """
     tile = _normalize_tile_name(tile)
     substitute = _normalize_tile_name(substitute)
     if substitute not in DU_TILES_UNIQUE:
@@ -128,7 +198,7 @@ def _ke_failure_message(hand, tile):
             )
         return (
             f"你有 2 张「{tile}」，磕牌还需一张督"
-            f"（总督可代任意牌；杂牌常用妖督，数牌用对应花色督）"
+            f"（总督可代任意牌；妖牌和一万/一筒/一条用妖督，二～九数牌用对应花色督）"
         )
     if n == 1 and _pick_pong_substitute(hand, tile):
         return (
@@ -176,7 +246,7 @@ def tile_scan_static_path(tile):
         return None
     if tile in _TILE_SCAN_PATHS:
         return _TILE_SCAN_PATHS[tile]
-    if tile.endswith("万"):
+    if _is_rank_suit_tile(tile) and tile.endswith("万"):
         return f"切分/万/{tile}.jpeg"
     if tile.endswith("筒"):
         return f"切分/筒/{tile}.jpeg"
@@ -264,7 +334,7 @@ def _play_post_error(message, *, status=400):
         dict(request.form),
     )
     flash(message, "error")
-    return redirect(url_for("play"))
+    return redirect(_play_redirect())
 
 
 _MELD_META_TAGS = frozenset({"chi", "pong", "long", "long_open", "ke_open"})
@@ -281,13 +351,11 @@ def _normalize_meld(meld):
 
 
 def _parse_suit_rank_tile(tile):
-    """万/筒/条 数牌 → (花色后缀, 点数下标 0..8)。"""
+    """万/筒/条 数牌 → (花色后缀, 点数下标 0..8)；千万等杂牌返回 None。"""
     tile = _normalize_tile_name(tile)
-    if not tile or len(tile) != 2:
+    if not _is_rank_suit_tile(tile):
         return None
     r, suf = tile[0], tile[1]
-    if suf not in ("万", "筒", "条") or r not in _RANK_CHARS:
-        return None
     return suf, _RANK_CHARS.index(r)
 
 
@@ -457,34 +525,45 @@ def _virtual_counter_for_win(hand, melds):
     return c
 
 
-def _suit_only_sequences(arr9, jokers=0, yi_jokers=0):
-    """万/筒/条 9 点计数；余牌须全部拆成顺子（禁止刻子）。督作百搭。"""
-    def dfs(a, j, yi):
+def _suit_only_sequences(arr9, jokers=0, yi_jokers=0, any_jokers=0):
+    """万/筒/条 9 点计数；余牌须全部拆成顺子（禁止刻子）。
+
+    花色督只补二～九；妖督只补「一」；总督(any_jokers)任意。
+    """
+    def dfs(a, j, yi, anyj):
         i = 0
         while i < 9 and a[i] == 0:
             i += 1
         if i >= 9:
-            return j == 0 and yi == 0
+            return j == 0 and yi == 0 and anyj == 0
         # 顺子可能从 i 之前开始（如 八万九万 + 万督 作 七八九）；起点 s 最大为 6（s+2≤8）
         for s in range(max(0, i - 2), min(i, 6) + 1):
-            na, nj, nyi = list(a), j, yi
+            na, nj, nyi, nany = list(a), j, yi, anyj
             ok = True
             for k in range(3):
                 ri = s + k
                 if na[ri] > 0:
                     na[ri] -= 1
-                elif ri == 0 and nyi > 0:
-                    nyi -= 1
+                elif ri == 0:
+                    if nyi > 0:
+                        nyi -= 1
+                    elif nany > 0:
+                        nany -= 1
+                    else:
+                        ok = False
+                        break
                 elif nj > 0:
                     nj -= 1
+                elif nany > 0:
+                    nany -= 1
                 else:
                     ok = False
                     break
-            if ok and dfs(na, nj, nyi):
+            if ok and dfs(na, nj, nyi, nany):
                 return True
         return False
 
-    return dfs(list(arr9), jokers, yi_jokers)
+    return dfs(list(arr9), jokers, yi_jokers, any_jokers)
 
 
 def _misc_only_sequences(misc_counts, yao_wild):
@@ -599,9 +678,9 @@ def _rest_all_melds_no_pair(c):
             rem = w_yao - ym
             for ya, yo, yi in _iter_nonneg_splits3(rem):
                 if (
-                    _suit_only_sequences(wan, w_wan + uw, yi_jokers=ya)
-                    and _suit_only_sequences(tong, w_tong + uto, yi_jokers=yo)
-                    and _suit_only_sequences(tiao, w_tiao + uti, yi_jokers=yi)
+                    _suit_only_sequences(wan, w_wan, yi_jokers=ya, any_jokers=uw)
+                    and _suit_only_sequences(tong, w_tong, yi_jokers=yo, any_jokers=uto)
+                    and _suit_only_sequences(tiao, w_tiao, yi_jokers=yi, any_jokers=uti)
                     and _misc_only_sequences(misc, ym + um)
                 ):
                     return True
@@ -623,7 +702,7 @@ def _try_remove_pair(counter):
             if _rest_all_melds_no_pair(c2):
                 return True
     if c.get("万督", 0) >= 1:
-        for r in _RANK_CHARS:
+        for r in _RANK_CHARS[1:]:
             tw = r + "万"
             if c.get(tw, 0) >= 1:
                 c2 = Counter(c)
@@ -636,7 +715,7 @@ def _try_remove_pair(counter):
                 if _rest_all_melds_no_pair(c2):
                     return True
     if c.get("筒督", 0) >= 1:
-        for r in _RANK_CHARS:
+        for r in _RANK_CHARS[1:]:
             tt = r + "筒"
             if c.get(tt, 0) >= 1:
                 c2 = Counter(c)
@@ -649,7 +728,7 @@ def _try_remove_pair(counter):
                 if _rest_all_melds_no_pair(c2):
                     return True
     if c.get("条督", 0) >= 1:
-        for r in _RANK_CHARS:
+        for r in _RANK_CHARS[1:]:
             tx = r + "条"
             if c.get(tx, 0) >= 1:
                 c2 = Counter(c)
@@ -934,7 +1013,7 @@ def _long_supplement_failure_message(hand, tile):
     suit_du = _suit_du_for(tile)
     if suit_du:
         opts.append(f"「{suit_du}」")
-    if tile in _MISC_ORDER:
+    if tile in _MISC_ORDER or _is_yi_rank_tile(tile):
         opts.append("「妖督」")
     opts.append("「总督」")
     return f"你没有 {' / '.join(opts)} 用于补拢"
@@ -974,7 +1053,7 @@ def _record_win_and_redirect(sess, kind, base_score, meld_score, *, win_tile=Non
         "total_score": total,
     }
     sess.modified = True
-    return redirect(url_for("play"))
+    return redirect(_play_redirect())
 
 
 def _execute_chi(sess, responder, D, discard, h1, h2):
@@ -1065,6 +1144,9 @@ def _execute_kai(sess, responder, D, tile):
     mi = _find_concealed_ke_or_long_index(melds[responder], tile)
     if mi is None:
         return False
+    draw_pile = list(sess.get("draw_pile") or [])
+    if not draw_pile:
+        return False
     old_meld = melds[responder][mi]
     bonus = _kai_bonus_for_meld(old_meld)
     melds[responder][mi] = _meld_to_open(old_meld)
@@ -1072,9 +1154,6 @@ def _execute_kai(sess, responder, D, tile):
     while len(scores) < len(hands):
         scores.append(0)
     scores[responder] += bonus
-    draw_pile = list(sess.get("draw_pile") or [])
-    if not draw_pile:
-        draw_pile = new_shuffled_draw_pile()
     drawn = draw_pile.pop()
     hands[responder].append(drawn)
     sess.pop("claim_state", None)
@@ -1261,9 +1340,6 @@ def _advance_ai_until_human_turn(sess):
         zhuang = int(sess.get("zhuang", 0))
         has_drawn = bool(sess.get("has_drawn_wall_this_turn", True))
 
-        if not draw_pile:
-            draw_pile = new_shuffled_draw_pile()
-
         if not has_drawn:
             if not draw_pile:
                 break
@@ -1282,9 +1358,6 @@ def _advance_ai_until_human_turn(sess):
         tile = random.choice(ph)
         ph.remove(tile)
         _finish_discard(sess, cp, tile)
-        if not sess.get("draw_pile"):
-            sess["draw_pile"] = new_shuffled_draw_pile()
-            sess.modified = True
 
 
 @app.route("/")
@@ -1296,79 +1369,54 @@ def index():
 def start():
     """初始化游戏（清空旧 session，避免脏数据）"""
     session.clear()
-    num_players = 4
-    hands = [[] for _ in range(num_players)]
-    
-    draw_pile = new_shuffled_draw_pile()
-
-    # 庄家（先抓者，开局为玩家 0）17 张，其余三家各 16 张
-    zhuang = 0
-    for i in range(num_players):
-        n = 17 if i == zhuang else 16
-        for _ in range(n):
-            hands[i].append(draw_pile.pop())
-
-    session["hands"] = hands
-    session["num_players"] = num_players
-    session["current_player"] = 0
-    session["draw_pile"] = draw_pile
-    session["discarded"] = []
-    session["melds"] = [[] for _ in range(num_players)]
-    session["scores"] = [0] * num_players
+    for key, val in _deal_new_game_state().items():
+        session[key] = val
     session.pop("pong_offer", None)
     session.pop("claim_state", None)
-    session["phase"] = "turn"
-    # 庄家：17 张起手，第一手出牌前不必从牌墙再摸
-    session["zhuang"] = zhuang
-    session["dealer_opening_done"] = False
-    session["has_drawn_wall_this_turn"] = True
     session.pop("after_claim_meld_turn", None)
     session.pop("last_wall_draw_tile", None)
     session.pop("drawn_tile", None)
     session.pop("game_result", None)
-    # 玩家 1（下标 0）为真人，其余为人机（GET /play 时自动摸牌 + 随机出牌）
     session["human_player_index"] = 0
-
     return redirect(url_for("play"))
 
 
 
-@app.route("/play", methods=["GET", "POST"])
-def play():
-    hands = session.get("hands")
-    num_players = int(session.get("num_players") or 4)
-    current_player = session.get("current_player")
-    discarded = session.get("discarded", [])
-    draw_pile = session.get("draw_pile", [])
-    melds = session.get("melds") or [[] for _ in range(num_players)]
+def _play(state, human_ix, *, online_room=None, room_version=0):
+    state["human_player_index"] = human_ix
+    hands = state.get("hands")
+    num_players = int(state.get("num_players") or 4)
+    current_player = state.get("current_player")
+    discarded = state.get("discarded", [])
+    draw_pile = state.get("draw_pile", [])
+    melds = state.get("melds") or [[] for _ in range(num_players)]
     if len(melds) < num_players:
         melds = melds + [[] for _ in range(num_players - len(melds))]
-    phase = session.get("phase", "turn")
+    phase = state.get("phase", "turn")
     miscellaneous = {"乌龟", "毛", "千万"}
-
-    if not draw_pile:
-        draw_pile = new_shuffled_draw_pile()
-        session["draw_pile"] = draw_pile
 
     if request.method == "POST":
         if hands is None or current_player is None:
+            if online_room:
+                return redirect(url_for("multi_lobby", code=online_room))
             return redirect(url_for("start"))
         # 继续对局时清掉上一局胡牌弹层，避免挡住操作且冻结人机推进
-        session.pop("game_result", None)
-        human_ix = session.get("human_player_index", 0)
+        state.pop("game_result", None)
+        if online_room and not _player_can_act(state, human_ix):
+            return _play_post_error("未轮到你操作")
         player_hand = hands[human_ix]
         player_melds = melds[human_ix]
-        zhuang = session.get("zhuang", 0)
-        has_drawn = session.get("has_drawn_wall_this_turn", True)
+        zhuang = state.get("zhuang", 0)
+        has_drawn = state.get("has_drawn_wall_this_turn", True)
 
         # === 碰牌：轮到真人询价时，碰 / 过 ===
-        cs = session.get("claim_state")
+        cs = state.get("claim_state")
         if cs:
             q, idx = cs["queue"], cs["idx"]
             if idx >= len(q):
-                return redirect(url_for("play"))
+                return redirect(_play_redirect())
             if q[idx] != human_ix:
-                return redirect(url_for("play"))
+                return redirect(_play_redirect())
             tile_c = _normalize_tile_name(cs["tile"])
             action = request.form.get("action") or ""
             if action == "hu":
@@ -1378,12 +1426,12 @@ def play():
                     result = evaluate_hand(player_hand, player_melds)
                     ms = _meld_score_sum(player_melds)
                     return _record_win_and_redirect(
-                        session, "zimo", result["score"], ms
+                        state, "zimo", result["score"], ms
                     )
                 action = "rong_hu"
             if _is_du_tile(tile_c):
-                _finish_all_claims_passed(session)
-                return redirect(url_for("play"))
+                _finish_all_claims_passed(state)
+                return redirect(_play_redirect())
             if action == "rong_hu":
                 if not can_ronghu(player_hand, player_melds, tile_c):
                     c_try = _rong_hand_counter(player_hand, player_melds, tile_c)
@@ -1392,11 +1440,11 @@ def play():
                     )
                     return _play_post_error(reason)
                 result = evaluate_rong_hand(player_hand, player_melds, tile_c)
-                if not _execute_rong_hu(session, human_ix, cs["discarder"], tile_c):
+                if not _execute_rong_hu(state, human_ix, cs["discarder"], tile_c):
                     return _play_post_error("荣胡失败（河牌状态异常）")
                 ms = _meld_score_sum(player_melds)
                 return _record_win_and_redirect(
-                    session,
+                    state,
                     "rong",
                     result["score"],
                     ms,
@@ -1404,7 +1452,7 @@ def play():
                     from_player=cs["discarder"] + 1,
                 )
             if action == "chi_claim":
-                npl = int(session.get("num_players", 4))
+                npl = int(state.get("num_players", 4))
                 Dc = cs["discarder"]
                 if (human_ix + npl - 1) % npl != Dc:
                     return _play_post_error("只有上家打出的牌才能吃")
@@ -1416,9 +1464,9 @@ def play():
                     return _play_post_error("吃牌须指定两张手牌")
                 if a == b and _hand_count(player_hand, a) < 2:
                     return _play_post_error("吃牌须指定两张手牌")
-                if not _execute_chi(session, human_ix, Dc, tile_c, a, b):
+                if not _execute_chi(state, human_ix, Dc, tile_c, a, b):
                     return _play_post_error("不能吃！")
-                return redirect(url_for("play"))
+                return redirect(_play_redirect())
             if action == "pong_claim":
                 if not _can_pong(player_hand, tile_c):
                     return _play_post_error(
@@ -1431,26 +1479,26 @@ def play():
                 if not pong_sub:
                     pong_sub = None
                 if not _execute_pong(
-                    session, human_ix, cs["discarder"], tile_c, substitute=pong_sub
+                    state, human_ix, cs["discarder"], tile_c, substitute=pong_sub
                 ):
                     return _play_post_error(
                         f"碰牌失败：河牌「{tile_c}」可能已被处理，或手牌与督牌不匹配。"
                     )
-                return redirect(url_for("play"))
+                return redirect(_play_redirect())
             if action == "kai_claim":
                 if not _can_kai(player_melds, tile_c):
                     return _play_post_error(
                         f"不能开：你没有与「{tile_c}」相同的暗磕或暗拢。"
                     )
-                if not _execute_kai(session, human_ix, cs["discarder"], tile_c):
+                if not _execute_kai(state, human_ix, cs["discarder"], tile_c):
                     return _play_post_error("开牌失败")
-                return redirect(url_for("play"))
+                return redirect(_play_redirect())
             if action == "pong_pass":
                 cs["idx"] = idx + 1
-                session.modified = True
+                state.modified = True
                 if cs["idx"] >= len(q):
-                    _finish_all_claims_passed(session)
-                return redirect(url_for("play"))
+                    _finish_all_claims_passed(state)
+                return redirect(_play_redirect())
             if request.form.get("tile") or request.form.get("meld_tile"):
                 return _play_post_error(
                     "当前为询价阶段，请先点「胡（荣）」「碰」「吃」「开」或「过」，不能出牌/磕牌。"
@@ -1461,10 +1509,10 @@ def play():
 
         # === 从牌墙摸牌（轮到本家且尚未摸时）===
         if request.form.get("action") == "draw_wall":
-            if session.get("claim_state"):
-                return redirect(url_for("play"))
+            if state.get("claim_state"):
+                return redirect(_play_redirect())
             if phase != "turn":
-                return redirect(url_for("play"))
+                return redirect(_play_redirect())
             if current_player != human_ix:
                 return "未轮到你摸牌", 400
             if has_drawn:
@@ -1473,27 +1521,27 @@ def play():
                 return "牌墙已空", 400
             drawn = draw_pile.pop()
             player_hand.append(drawn)
-            session["hands"] = hands
-            session["draw_pile"] = draw_pile
-            session["has_drawn_wall_this_turn"] = True
-            session.pop("after_claim_meld_turn", None)
-            session["last_wall_draw_tile"] = drawn
-            return redirect(url_for("play"))
+            state["hands"] = hands
+            state["draw_pile"] = draw_pile
+            state["has_drawn_wall_this_turn"] = True
+            state.pop("after_claim_meld_turn", None)
+            state["last_wall_draw_tile"] = drawn
+            return redirect(_play_redirect())
 
         # === 处理拢牌 ===
         if request.form.get("action") == "long":
-            if session.get("claim_state"):
+            if state.get("claim_state"):
                 return "请先完成碰牌选择", 400
             if current_player != human_ix:
                 return "未轮到你操作", 400
             if not has_drawn:
                 return "请先抓牌", 400
             tile_to_long = request.form.get("long_tile")
-            scores = list(session.get("scores") or [0] * num_players)
+            scores = list(state.get("scores") or [0] * num_players)
             while len(scores) < num_players:
                 scores.append(0)
 
-            # 补拢：明面磕/碰 + 手牌再一张同点（或花色督）
+            # 补拢：明面磕/碰 + 手牌再一张同点（或可用督）
             for i, meld in enumerate(player_melds):
                 if not _meld_can_upgrade_to_long(meld) or meld[0] != tile_to_long:
                     continue
@@ -1505,14 +1553,14 @@ def play():
                 player_hand.remove(pay_tile)
                 player_melds[i] = (tile_to_long, None, "long")
                 scores[human_ix] += _long_immediate_score(tile_to_long)
-                session["hands"] = hands
-                session["melds"] = melds
-                session["scores"] = scores
-                session.modified = True
+                state["hands"] = hands
+                state["melds"] = melds
+                state["scores"] = scores
+                state.modified = True
                 if draw_pile:
                     player_hand.append(draw_pile.pop())
-                    session["draw_pile"] = draw_pile
-                return redirect(url_for("play"))
+                    state["draw_pile"] = draw_pile
+                return redirect(_play_redirect())
 
             # 直接拢
             if player_hand.count(tile_to_long) >= 4:
@@ -1520,20 +1568,20 @@ def play():
                     player_hand.remove(tile_to_long)
                 player_melds.append((tile_to_long, None, "long"))
                 scores[human_ix] += _long_immediate_score(tile_to_long)
-                session["hands"] = hands
-                session["melds"] = melds
-                session["scores"] = scores
-                session.modified = True
+                state["hands"] = hands
+                state["melds"] = melds
+                state["scores"] = scores
+                state.modified = True
                 if draw_pile:
                     player_hand.append(draw_pile.pop())
-                    session["draw_pile"] = draw_pile
-                return redirect(url_for("play"))
+                    state["draw_pile"] = draw_pile
+                return redirect(_play_redirect())
 
             return _play_post_error("无法拢牌，条件不满足")
 
         # === 处理磕牌 ===
         elif phase == "turn" and "meld_tile" in request.form:
-            if session.get("claim_state"):
+            if state.get("claim_state"):
                 return _play_post_error("请先完成碰牌选择")
             if current_player != human_ix:
                 return _play_post_error("未轮到你操作")
@@ -1561,14 +1609,14 @@ def play():
                     if not _hand_remove_one(player_hand, meld_tile):
                         return _play_post_error("磕牌失败：手牌张数异常")
                 player_melds.append((meld_tile, None))
-            session["hands"] = hands
-            session["melds"] = melds
-            session.modified = True
-            return redirect(url_for("play"))
+            state["hands"] = hands
+            state["melds"] = melds
+            state.modified = True
+            return redirect(_play_redirect())
 
         # === 出牌 ===
         elif phase == "turn" and "tile" in request.form:
-            if session.get("claim_state"):
+            if state.get("claim_state"):
                 return "请先完成碰牌选择", 400
             if current_player != human_ix:
                 return "未轮到你出牌", 400
@@ -1577,17 +1625,17 @@ def play():
             tile = request.form.get("tile")
             if tile and tile in player_hand:
                 player_hand.remove(tile)
-                session.pop("after_claim_meld_turn", None)
-                _finish_discard(session, human_ix, tile)
-                session["hands"] = hands
-                session["draw_pile"] = draw_pile
-                session.pop("drawn_tile", None)
+                state.pop("after_claim_meld_turn", None)
+                _finish_discard(state, human_ix, tile)
+                state["hands"] = hands
+                state["draw_pile"] = draw_pile
+                state.pop("drawn_tile", None)
             else:
                 return "出牌无效", 400
 
         # === 胡牌（自摸；碰/吃/开后无需再摸牌也可胡）===
         elif phase == "turn" and request.form.get("action") == "hu":
-            if session.get("claim_state"):
+            if state.get("claim_state"):
                 return _play_post_error("请先完成碰牌选择")
             if current_player != human_ix:
                 return _play_post_error("未轮到你操作")
@@ -1595,37 +1643,36 @@ def play():
             if not can_zimo_hu(hand_copy, player_melds):
                 return _play_post_error(_zimo_hu_failure_message(hand_copy, player_melds))
             result = evaluate_hand(hand_copy, player_melds)
-            after_claim = bool(session.get("after_claim_meld_turn"))
+            after_claim = bool(state.get("after_claim_meld_turn"))
             if not has_drawn and not after_claim:
                 return _play_post_error("请先摸牌后再胡")
             ms = _meld_score_sum(player_melds)
-            session.pop("after_claim_meld_turn", None)
-            return _record_win_and_redirect(session, "zimo", result["score"], ms)
+            state.pop("after_claim_meld_turn", None)
+            return _record_win_and_redirect(state, "zimo", result["score"], ms)
 
-        return redirect(url_for("play"))
+        return redirect(_play_redirect())
 
     # === GET 请求：渲染页面 ===
     if hands is None:
+        if online_room:
+            return redirect(url_for("multi_lobby", code=online_room))
         return redirect(url_for("start"))
     if request.args.get("dismiss_win"):
-        session.pop("game_result", None)
-        session.modified = True
-        return redirect(url_for("play"))
-    if not draw_pile:
-        draw_pile = new_shuffled_draw_pile()
-        session["draw_pile"] = draw_pile
-    if not session.get("game_result"):
-        _advance_ai_until_human_turn(session)
-    hands = session.get("hands")
-    current_player = session.get("current_player")
-    num_players = int(session.get("num_players") or 4)
-    discarded = session.get("discarded", [])
-    draw_pile = session.get("draw_pile", [])
-    melds = session.get("melds", [[] for _ in range(num_players)])
-    phase = session.get("phase", "turn")
+        state.pop("game_result", None)
+        state.modified = True
+        return redirect(_play_redirect())
+    if not state.get("game_result") and not online_room:
+        _advance_ai_until_human_turn(state)
+    hands = state.get("hands")
+    current_player = state.get("current_player")
+    num_players = int(state.get("num_players") or 4)
+    discarded = state.get("discarded", [])
+    draw_pile = state.get("draw_pile", [])
+    melds = state.get("melds", [[] for _ in range(num_players)])
+    phase = state.get("phase", "turn")
 
-    human_player_index = session.get("human_player_index", 0)
-    claim_state = session.get("claim_state")
+    human_player_index = human_ix
+    claim_state = state.get("claim_state")
     if claim_state and claim_state.get("idx", 0) < len(claim_state.get("queue", [])):
         seat_highlight_index = claim_state["queue"][claim_state["idx"]]
     else:
@@ -1665,10 +1712,10 @@ def play():
     hand = sort_tiles(hands[human_player_index])
     if claim_chi_eligible:
         chi_hand_choices = sorted(set(hand), key=_tile_sort_key)
-    has_drawn_wall = session.get("has_drawn_wall_this_turn", True)
-    last_wall_draw = session.get("last_wall_draw_tile")
-    zhuang = session.get("zhuang", 0)
-    dealer_opening_done = session.get("dealer_opening_done", True)
+    has_drawn_wall = state.get("has_drawn_wall_this_turn", True)
+    last_wall_draw = state.get("last_wall_draw_tile")
+    zhuang = state.get("zhuang", 0)
+    dealer_opening_done = state.get("dealer_opening_done", True)
     player_melds = melds[human_player_index]
     can_zimo = can_zimo_hu(hand, player_melds)
     can_rong = False
@@ -1702,7 +1749,7 @@ def play():
     seat_counts = [len(hands[i]) for i in range(num_players)]
     seat_meld_counts = [len(melds[i]) for i in range(num_players)]
     draw_pile_count = len(draw_pile)
-    player_scores = list(session.get("scores") or [0] * num_players)
+    player_scores = list(state.get("scores") or [0] * num_players)
     while len(player_scores) < num_players:
         player_scores.append(0)
 
@@ -1744,13 +1791,123 @@ def play():
         seat_counts=seat_counts,
         seat_meld_counts=seat_meld_counts,
         draw_pile_count=draw_pile_count,
-        game_result=session.get("game_result"),
+        game_result=state.get("game_result"),
         human_turn_controls=human_turn_controls,
         can_zimo_hu=can_zimo,
         can_rong_hu=can_rong,
         claim_pong_then_hu=claim_pong_then_hu,
-        after_claim_meld_turn=bool(session.get("after_claim_meld_turn")),
+        after_claim_meld_turn=bool(state.get("after_claim_meld_turn")),
+        online_mode=bool(online_room),
+        online_room=online_room,
+        room_version=room_version,
+        poll_url=url_for("multi_poll", code=online_room) if online_room else None,
+        play_url=_play_redirect(),
     )
+
+
+@app.route("/play", methods=["GET", "POST"])
+def play():
+    g.play_redirect = url_for("play")
+    g.online_mode = False
+    return _play(session, session.get("human_player_index", 0))
+
+
+@app.route("/online")
+def online_home():
+    join = (request.args.get("join") or "").strip().upper()
+    if join:
+        return redirect(url_for("multi_lobby", code=join))
+    return render_template("lobby.html")
+
+
+@app.route("/online/create", methods=["POST"])
+def online_create():
+    code = room_store.create_room()
+    return redirect(url_for("multi_lobby", code=code))
+
+
+@app.route("/r/<code>")
+def multi_lobby(code):
+    code = code.upper()
+    if not room_store.room_exists(code):
+        flash("房间不存在", "error")
+        return redirect(url_for("online_home"))
+    token = _ensure_player_token()
+    seats = room_store.get_seats(code)
+    my_seat = room_store.seat_for_token(code, token)
+    meta = room_store.get_room_meta(code)
+    if meta and meta["status"] == "playing" and my_seat is not None:
+        return redirect(url_for("multi_play", code=code))
+    return render_template(
+        "lobby.html",
+        code=code,
+        seats=seats,
+        my_seat=my_seat,
+        status=meta["status"] if meta else "waiting",
+        version=meta["version"] if meta else 0,
+    )
+
+
+@app.route("/r/<code>/join", methods=["POST"])
+def multi_join(code):
+    code = code.upper()
+    if not room_store.room_exists(code):
+        flash("房间不存在", "error")
+        return redirect(url_for("online_home"))
+    try:
+        seat = int(request.form.get("seat", -1))
+    except (TypeError, ValueError):
+        flash("请选择座位", "error")
+        return redirect(url_for("multi_lobby", code=code))
+    token = _ensure_player_token()
+    taken, err = room_store.take_seat(code, seat, token)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("multi_lobby", code=code))
+    seats = room_store.get_seats(code)
+    if len(seats) >= 4:
+        room_store.save_state(code, _deal_new_game_state(), status="playing")
+    return redirect(url_for("multi_lobby", code=code))
+
+
+@app.route("/r/<code>/poll")
+def multi_poll(code):
+    code = code.upper()
+    client_v = request.args.get("v", 0, type=int)
+    meta = room_store.get_room_meta(code)
+    if not meta:
+        return jsonify(ok=False, error="room_not_found"), 404
+    seats = room_store.get_seats(code)
+    return jsonify(
+        ok=True,
+        version=meta["version"],
+        status=meta["status"],
+        seat_count=len(seats),
+        changed=meta["version"] > client_v,
+    )
+
+
+@app.route("/r/<code>/play", methods=["GET", "POST"])
+def multi_play(code):
+    code = code.upper()
+    if not room_store.room_exists(code):
+        flash("房间不存在", "error")
+        return redirect(url_for("online_home"))
+    token = _ensure_player_token()
+    seat = room_store.seat_for_token(code, token)
+    if seat is None:
+        flash("请先选座入座", "error")
+        return redirect(url_for("multi_lobby", code=code))
+    raw, status, ver = room_store.load_state(code)
+    if status != "playing" or not raw or not raw.get("hands"):
+        return redirect(url_for("multi_lobby", code=code))
+    state = state_from_storage(raw)
+    g.play_redirect = url_for("multi_play", code=code)
+    g.online_mode = True
+    resp = _play(state, seat, online_room=code, room_version=ver)
+    if getattr(state, "modified", False):
+        room_store.save_state(code, state_to_storage(state))
+    return resp
 
 
 @app.errorhandler(Exception)
@@ -1772,5 +1929,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5007"))
     host = os.environ.get("HOST", "127.0.0.1")
     debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
-    print(f"虎牌: http://{host}:{port}/start")
+    print(f"虎牌: http://{host}:{port}/start  联机: http://{host}:{port}/online")
     app.run(debug=debug, host=host, port=port)

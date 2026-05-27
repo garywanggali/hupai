@@ -693,6 +693,14 @@
     </style>
 </head>
 <body>
+{% if online_mode %}
+<div style="position:fixed;top:0;left:0;right:0;z-index:9999;padding:8px 12px;background:rgba(0,0,0,0.75);color:#f7e7a8;font-size:13px;text-align:center;border-bottom:1px solid rgba(247,231,168,0.25);">
+    联机房间 <strong>{{ online_room }}</strong> · 你的座位 <strong>{{ human_player_index + 1 }}</strong>
+    {% if not human_turn_controls %} · <span style="opacity:0.85">等待其他玩家操作…</span>{% endif %}
+    <a href="{{ url_for('multi_lobby', code=online_room) }}" style="color:#c9a227;margin-left:12px;">大厅</a>
+</div>
+<div style="height:36px"></div>
+{% endif %}
 
 <div class="table">
     <header class="room-bar">
@@ -875,7 +883,7 @@
                 <button type="submit" name="action" value="pong_pass" class="btn-outline">过</button>
             </form>
         </div>
-        <p class="hint-tiny" style="text-align:center;margin:8px 12px 0;">吃：仅<strong>上家</strong>这张可与手牌二张成顺（万/筒/条）；<strong>总督</strong>可顶替缺张。<strong>碰</strong>须与河牌同点三张，手牌可一张同点+一张督（杂牌用妖督，数牌用花色督或妖督代「一」，<strong>总督</strong>任意）。<strong>开</strong>：暗磕或暗拢与河牌同点可翻明，再摸打。{% if claim_pong_then_hu %} <strong>碰后若已是一对将+全顺子，可直接胡。</strong>{% endif %}</p>
+        <p class="hint-tiny" style="text-align:center;margin:8px 12px 0;">吃：仅<strong>上家</strong>这张可与手牌二张成顺（万/筒/条）；<strong>总督</strong>可顶替缺张。<strong>碰</strong>须与河牌同点三张，手牌可一张同点+一张督（一万/一筒/一条与杂牌用妖督，二～九数牌用花色督，<strong>总督</strong>任意）。<strong>开</strong>：暗磕或暗拢与河牌同点可翻明，再摸打。{% if claim_pong_then_hu %} <strong>碰后若已是一对将+全顺子，可直接胡。</strong>{% endif %}</p>
         {% elif needs_wall_draw %}
         <div class="btn-bar">
             <form method="post" id="huForm">
@@ -1002,8 +1010,13 @@
             </div>
 
             <div class="win-actions">
+                {% if online_mode %}
+                <a href="{{ url_for('multi_lobby', code=online_room) }}" class="btn-gold">返回大厅</a>
+                <a href="{{ play_url }}?dismiss_win=1" class="btn-outline">留在牌桌</a>
+                {% else %}
                 <a href="{{ url_for('start') }}" class="btn-gold">再来一局</a>
                 <a href="{{ url_for('play', dismiss_win=1) }}" class="btn-outline">留在牌桌</a>
+                {% endif %}
             </div>
         </article>
     </div>
@@ -1047,10 +1060,10 @@
     function pickSubstituteFor(tileText) {
         if (!substituteSelect) return;
         const tryList = [];
-        if (tileText.includes("万")) tryList.push("万督");
-        if (tileText.includes("筒")) tryList.push("筒督");
-        if (tileText.includes("条")) tryList.push("条督");
-        if (miscSet.has(tileText)) tryList.push("妖督");
+        if (miscSet.has(tileText) || /^一[万筒条]$/.test(tileText)) tryList.push("妖督");
+        else if (/^[二三四五六七八九]万$/.test(tileText)) tryList.push("万督");
+        else if (/^[二三四五六七八九]筒$/.test(tileText)) tryList.push("筒督");
+        else if (/^[二三四五六七八九]条$/.test(tileText)) tryList.push("条督");
         tryList.push("总督");
         for (const s of tryList) {
             if (Array.from(substituteSelect.options).some(o => o.value === s)) {
@@ -1130,6 +1143,25 @@
     }
 })();
 </script>
+
+{% if poll_url %}
+<script>
+(function () {
+    const base = "{{ poll_url }}";
+    let v = {{ room_version|default(0) }};
+    setInterval(async () => {
+        try {
+            const r = await fetch(base + "?v=" + v);
+            const j = await r.json();
+            if (j.ok && j.version > v) {
+                v = j.version;
+                location.reload();
+            }
+        } catch (e) {}
+    }, 2000);
+})();
+</script>
+{% endif %}
 
 </body>
 </html>
